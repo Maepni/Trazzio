@@ -7,7 +7,7 @@ export function WorkerHeader() {
   const { data: session } = useSession()
 
   return (
-    <header className="bg-[#1e3a5f] text-white px-4 py-3 flex items-center justify-between sticky top-0 z-10">
+    <header className="bg-[#1e3a5f] text-white px-4 flex items-center justify-between sticky top-0 z-10 w-full" style={{ paddingTop: "max(12px, env(safe-area-inset-top))", paddingBottom: "12px" }}>
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 rounded-lg bg-[#f97316] flex items-center justify-center flex-shrink-0">
           <span className="text-white font-bold text-sm">T</span>
@@ -22,11 +22,11 @@ export function WorkerHeader() {
 
       <button
         onClick={() => signOut({ callbackUrl: "/login" })}
-        className="flex items-center gap-1.5 text-blue-300 hover:text-white transition-colors text-xs font-medium py-1.5 px-2 rounded-lg hover:bg-white/10"
+        className="flex items-center gap-1.5 text-blue-300 hover:text-white transition-colors text-xs font-medium py-2 px-3 rounded-lg hover:bg-white/10 active:bg-white/20"
         title="Cerrar sesión"
       >
         <LogOut className="h-4 w-4" />
-        <span className="hidden sm:inline">Salir</span>
+        <span>Salir</span>
       </button>
     </header>
   )

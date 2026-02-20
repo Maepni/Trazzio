@@ -59,8 +59,11 @@ export async function POST(req: Request) {
   if (assignment.status === "SETTLED") return NextResponse.json({ error: "Ya rendida" }, { status: 400 })
 
   const totalMerma = mermaItems.reduce((sum, m) => sum + m.quantity, 0)
-  const totalSold = assignment.quantityAssigned - quantityReturned - totalMerma
-  if (totalSold < 0) return NextResponse.json({ error: "Cantidades inválidas: sobrante + merma supera lo asignado" }, { status: 400 })
+  // Merma se registra para el admin pero NO reduce el vendido — el trabajador responde por todo lo no devuelto
+  const totalSold = assignment.quantityAssigned - quantityReturned
+  if (quantityReturned > assignment.quantityAssigned) {
+    return NextResponse.json({ error: "El sobrante supera lo asignado" }, { status: 400 })
+  }
 
   const amountDue = totalSold * Number(assignment.product.salePrice)
   const difference = amountDue - amountPaid

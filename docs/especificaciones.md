@@ -72,11 +72,12 @@ Trazzio es una plataforma web responsive para gestionar el ciclo completo de ven
 - Estado de la rendición (pendiente / completada)
 
 #### ✅ Rendición Diaria
-1. Para cada producto asignado, ingresar **cantidad sobrante**
-2. Ingresar **merma** (productos defectuosos): cantidad y motivo
-3. El sistema calcula automáticamente: `vendido = asignado - sobrante - merma`
-4. Ver el **total a pagar** (vendido × precio venta)
-5. Confirmar y enviar rendición
+1. Para cada producto asignado, ingresar **cantidad sobrante** (cajas + unidades)
+2. Ingresar **merma** (productos defectuosos): cantidad y motivo (solo informativo)
+3. El sistema calcula automáticamente: `vendido = asignado - sobrante`
+4. Ver el **total a pagar** acumulado de todos los productos
+5. En el último producto, ingresar el **monto total entregado** al admin
+6. Confirmar y enviar rendición (se distribuye el pago proporcionalmente)
 
 ---
 
@@ -100,10 +101,11 @@ Trazzio es una plataforma web responsive para gestionar el ciclo completo de ven
 [Sistema actualiza inventario, ganancias y reportes]
 ```
 
-**Lógica de merma:**
-- La merma se descuenta del total vendido (no se cobra al trabajador)
-- Ajusta el inventario (se anota como pérdida/devolución a empresa)
-- Queda registrada en reportes por producto/empresa
+**Lógica de merma (actualizada):**
+- La merma es **informacional**: se reporta al admin pero NO reduce el total vendido ni el monto a pagar
+- El trabajador responde financieramente por todo lo no devuelto (`vendido = asignado - sobrante`)
+- Queda registrada en `MermaItem` para reportes de merma por producto/empresa
+- El admin puede revisar la merma y ajustar manualmente si corresponde
 
 ---
 
@@ -112,7 +114,7 @@ Trazzio es una plataforma web responsive para gestionar el ciclo completo de ven
 1. Un trabajador solo puede tener una rendición pendiente activa por día
 2. El precio de venta lo define únicamente el admin y no puede ser modificado por el trabajador
 3. El stock bajo se configura por producto y el admin define el umbral (ej: 50 unidades)
-4. La merma reduce las unidades vendidas y por tanto el dinero a rendir
+4. La merma es informacional y NO reduce el dinero a rendir; el trabajador responde por todo lo no devuelto
 5. El inventario se actualiza en tiempo real al asignar y al cerrar rendiciones
 6. El sistema maneja stock en **unidades**, pero muestra equivalente en **cajas** según `unitPerBox`
 

@@ -117,14 +117,32 @@ export function ProductDialog({ companyId, companyName, product }: Props) {
               <FormField control={form.control} name="costPrice" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Precio Costo (S/)</FormLabel>
-                  <FormControl><Input type="number" step="0.01" placeholder="0.00" {...field} /></FormControl>
+                  <FormControl>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      {...field}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
               <FormField control={form.control} name="salePrice" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Precio Venta (S/)</FormLabel>
-                  <FormControl><Input type="number" step="0.01" placeholder="0.00" {...field} /></FormControl>
+                  <FormControl>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      {...field}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -133,14 +151,30 @@ export function ProductDialog({ companyId, companyName, product }: Props) {
               <FormField control={form.control} name="unitPerBox" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Unidades por Caja</FormLabel>
-                  <FormControl><Input type="number" placeholder="24" {...field} /></FormControl>
+                  <FormControl>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="24"
+                      autoComplete="off"
+                      {...field}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
               <FormField control={form.control} name="lowStockAlert" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Alerta Stock (und.)</FormLabel>
-                  <FormControl><Input type="number" placeholder="10" {...field} /></FormControl>
+                  <FormControl>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="10"
+                      autoComplete="off"
+                      {...field}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )} />

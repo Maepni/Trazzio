@@ -19,7 +19,7 @@ export function WorkerHome({ assignments, workerName }: Props) {
   const totalEarned = settled.reduce((sum, a) => sum + Number(a.settlement?.amountDue ?? 0), 0)
 
   return (
-    <div className="p-4 space-y-5">
+    <div className="p-4 space-y-5 max-w-lg mx-auto">
       <div>
         <h2 className="text-xl font-bold text-[#1e3a5f]">¡Hola, {workerName}!</h2>
         <p className="text-gray-500 text-sm">{formatDate(new Date())}</p>

@@ -1,11 +1,11 @@
 # CLAUDE.md — Contexto del Proyecto Trazzio
 
 ## Resumen
-Sistema web fullstack para gestionar ventas de conservas. Cubre el ciclo completo: recepción de mercadería de proveedores → asignación a trabajadores → rendición diaria → reportes de ganancias, inventario y merma.
+Sistema web fullstack para gestionar ventas de conservas. Ciclo completo: recepción de mercadería → asignación a trabajadores → rendición diaria → reportes de ganancias, inventario y merma.
 
 - **Dos roles:** Admin (desktop/mobile) y Trabajador (mobile-first)
-- **Directorio:** `/home/mapins/Escritorio/Trazzio/trazzio/`
-- **Docs:** `/home/mapins/Escritorio/Trazzio/docs/`
+- **Directorio:** `/home/mapins/Escritorio/trazzio/`
+- **Docs:** `/home/mapins/Escritorio/trazzio/docs/`
 - **Estado:** ✅ Todos los módulos implementados y funcionales
 
 ---
@@ -20,7 +20,7 @@ Sistema web fullstack para gestionar ventas de conservas. Cubre el ciclo complet
 | Auth | NextAuth.js | v5 beta |
 | UI | Tailwind CSS + shadcn/ui | Tailwind 3.x |
 | Estado/Fetch | TanStack Query | v5 |
-| Forms | react-hook-form + zod | RHF v7, Zod v4 |
+| Forms | react-hook-form + zod | RHF v7, Zod v4 (solo admin) |
 | Gráficos | Recharts | instalado |
 
 ---
@@ -31,7 +31,7 @@ Sistema web fullstack para gestionar ventas de conservas. Cubre el ciclo complet
 app/
 ├── (auth)/login
 ├── (admin)/
-│   ├── dashboard       → KPIs del día + gráfico barras trabajadores (SSR + DashboardChart client)
+│   ├── dashboard       → KPIs del día + gráfico barras trabajadores
 │   ├── companies       → CRUD empresas y productos
 │   ├── stock           → Recepción de mercadería + historial + inventario
 │   ├── workers         → CRUD trabajadores + credenciales
@@ -40,21 +40,18 @@ app/
 │   └── reports         → 5 tabs: trabajadores, inventario, merma, ganancias, stock bajo
 ├── (worker)/
 │   ├── home            → Asignaciones del día + resumen (SSR)
-│   └── settle          → Formulario paso a paso con steppers +/−
+│   └── settle          → Rendición paso a paso con BoxUnitStepper
 └── api/
     ├── auth/[...nextauth]
-    ├── companies/          GET, POST
-    ├── companies/[id]      PUT, DELETE
-    ├── products/           GET, POST
-    ├── products/[id]       PUT, DELETE
-    ├── workers/            GET, POST
-    ├── workers/[id]        PUT, DELETE
+    ├── companies/[id]      GET, POST, PUT, DELETE
+    ├── products/[id]       GET, POST, PUT, DELETE
+    ├── workers/[id]        GET, POST, PUT, DELETE
     ├── stock               GET, POST
     ├── assignments/        GET (hoy), POST
     ├── assignments/[id]    DELETE
-    ├── settlements/        GET (con filtros: from, to, workerId), POST
-    ├── settlements/[id]    PATCH (ajuste de monto por admin)
-    └── reports             GET (con filtros + dailyBreakdown)
+    ├── settlements/        GET (filtros: from, to, workerId), POST
+    ├── settlements/[id]    PATCH (ajuste monto admin)
+    └── reports             GET (filtros + dailyBreakdown)
 ```
 
 ---
@@ -75,7 +72,10 @@ MermaItem     id, assignmentId, productId, quantity, reason
 StockEntry    id, productId, quantity, boxes, entryDate, notes
 ```
 
-**Regla central:** `vendido = asignado - sobrante - merma`
+**Regla central (actualizada):**
+- `vendido = asignado - sobrante` ← merma NO resta el vendido
+- `amountDue = vendido × salePrice`
+- La merma se registra en `MermaItem` para reportes del admin, pero el trabajador responde financieramente por todo lo no devuelto.
 
 ---
 
@@ -92,7 +92,7 @@ NEXTAUTH_URL="http://localhost:3000"
 ## Comandos de Desarrollo
 
 ```bash
-cd /home/mapins/Escritorio/Trazzio/trazzio
+cd /home/mapins/Escritorio/trazzio
 npm run dev
 npm run db:push && npm run db:seed
 npx tsc --noEmit
@@ -107,7 +107,7 @@ Seed crea: `admin@trazzio.com / admin123` y `trabajador@trazzio.com / worker123`
 ### Patrón SSR → Client
 ```typescript
 // page.tsx (Server Component)
-import { serialize } from "@/lib/utils"          // ← SIEMPRE serializar
+import { serialize } from "@/lib/utils"   // ← SIEMPRE serializar
 const data = await prisma.model.findMany(...)
 return <ComponentClient initialData={serialize(data)} />
 
@@ -116,19 +116,23 @@ return <ComponentClient initialData={serialize(data)} />
 const { data } = useQuery({ queryKey: [...], queryFn: ..., initialData })
 ```
 
-> **⚠️ CRÍTICO:** Prisma devuelve `Decimal`, `Date` y `BigInt` como objetos no serializables.
-> **SIEMPRE** llamar `serialize()` antes de pasar datos a Client Components.
-> `serialize<T>(data: T): T` → `JSON.parse(JSON.stringify(data))`
+> **⚠️ CRÍTICO:** Prisma devuelve `Decimal`, `Date`, `BigInt` no serializables.
+> Siempre `serialize()` antes de pasar datos a Client Components.
 
-### Formularios con Zod v4 + RHF v7
+### Formularios con Zod v4 + RHF v7 (solo admin)
 ```typescript
 // z.coerce.number() da tipo unknown → usar preprocess
 const schema = z.object({
   price: z.preprocess((v) => Number(v), z.number()),
 })
-// Castear el resolver
 resolver: zodResolver(schema) as Resolver<FormData>  // o "as any"
 ```
+
+> ⚠️ El `settle-form.tsx` del worker usa **estado local React** (no RHF) para evitar
+> bugs de sincronización con Controller + useFieldArray en arrays dinámicos.
+
+### shadcn/ui — FormLabel fuera de FormField
+`<FormLabel>` llama internamente a `useFormField()`, que lanza error si no está dentro de `<FormField><FormItem>`. Usar `<label className="text-sm font-medium leading-none">` para etiquetas fuera de ese contexto.
 
 ### Otras convenciones
 - **Archivos:** `kebab-case.tsx`. Admin en `components/admin/`, worker en `components/worker/`
@@ -148,7 +152,7 @@ resolver: zodResolver(schema) as Resolver<FormData>  // o "as any"
 | `lib/auth.ts` | NextAuth config, JWT/session callbacks, roles |
 | `lib/prisma.ts` | Singleton PrismaClient |
 | `lib/utils.ts` | `formatCurrency`, `formatUnitsToBoxes`, `formatDate`, `getTodayStart/End`, `serialize` |
-| `middleware.ts` | Protección rutas por rol (ADMIN→/dashboard, WORKER→/home) |
+| `middleware.ts` | Protección rutas por rol |
 | `components/providers.tsx` | SessionProvider + QueryClientProvider |
 | `types/next-auth.d.ts` | Extensión Session (role, workerId, workerName) |
 | `prisma/schema.prisma` | Modelo completo con relaciones y cascades |
@@ -164,58 +168,78 @@ resolver: zodResolver(schema) as Resolver<FormData>  // o "as any"
 |---|---|---|
 | Dashboard | `dashboard/page.tsx` + `dashboard-chart.tsx` | KPIs del día, gráfico barras ventas x trabajador, pendientes, stock bajo |
 | Empresas | `companies-client.tsx` | CRUD empresas + CRUD productos inline |
-| Stock | `stock-client.tsx` | Formulario ingreso (cajas/unidades), historial, resumen inventario |
+| Stock | `stock-client.tsx` | Ingreso cajas/unidades con cálculo mutuo automático; inventario con columna Unidades; historial con columna Unidades |
 | Trabajadores | `workers-client.tsx` | CRUD con tipo comisión (% o fijo), credenciales login, reset password |
-| Asignaciones | `assignments-client.tsx` | Multi-producto x trabajador, valida stock disponible, historial x fecha |
-| Rendiciones | `settlements-client.tsx` | Filtros fecha+trabajador, cards con semáforo ✓/✗, Sheet detalle, ajuste monto admin |
-| Reportes | `reports-client.tsx` | 5 tabs: trabajadores (días+comisión), inventario (cajas), merma (S/), ganancias (LineChart día/semana/mes), stock bajo (botón ingreso rápido) |
+| Asignaciones | `assignments-client.tsx` | Multi-producto x trabajador; toggle cajas/unidades por fila; columna Unidades + Valor Venta en tabla |
+| Rendiciones | `settlements-client.tsx` | Filtros fecha+trabajador, cards semáforo ✓/✗, Sheet detalle, ajuste monto admin |
+| Reportes | `reports-client.tsx` | 5 tabs: trabajadores, inventario, merma, ganancias (LineChart), stock bajo |
 
 ### Worker (mobile-first)
 | Módulo | Componente | Descripción |
 |---|---|---|
-| Header | `worker-header.tsx` | Logo + nombre trabajador + botón Salir (signOut) |
+| Header | `worker-header.tsx` | Logo + nombre trabajador + botón Salir |
 | Home | `worker-home.tsx` | Asignaciones del día, pendientes vs rendidos |
-| Rendición | `settle-form.tsx` | Paso a paso, steppers +/−, cálculo en tiempo real, notas globales |
+| Rendición | `settle-form.tsx` | Paso a paso; `BoxUnitStepper` (cajas + unidades juntos); merma informacional; pago global en último paso; distribución proporcional |
 
 ---
 
 ## Gotchas y Problemas Conocidos
 
-1. **Prisma v7 incompatible:** Si se reinstalan deps, verificar `prisma@^5.x`. La v7 cambió la API radicalmente.
+1. **Prisma v7 incompatible:** Verificar `prisma@^5.x` si se reinstalan deps.
 
 2. **Zod v4 + RHF v7:** `z.coerce.number()` → tipo `unknown`. Usar `z.preprocess((v) => Number(v), z.number())` + `resolver as any`.
 
-3. **Decimal no serializable:** Todo dato de Prisma con campos `Decimal` (costPrice, salePrice, commission, amountDue, etc.) debe pasar por `serialize()` antes de llegar a Client Components.
+3. **Decimal no serializable:** Todo campo Decimal/Date de Prisma debe pasar por `serialize()` antes de llegar a Client Components.
 
-4. **NextAuth v5 beta:** Server usa `auth()`, client usa `useSession()`. Ruta API: `app/api/auth/[...nextauth]/route.ts` exporta `{ GET, POST } = handlers`.
+4. **NextAuth v5 beta:** Server usa `auth()`, client usa `useSession()`.
 
-5. **`distinct` en Prisma v5:** `findMany({ distinct: ['workerId'] })` puede generar tipos complejos → añadir `: any` en el `.map()`.
+5. **`distinct` en Prisma v5:** `findMany({ distinct: ['workerId'] })` puede generar tipos complejos → añadir `: any` en `.map()`.
 
-6. **`prisma.config.ts`:** Artefacto de v7, vaciado con `export {}`. No borrar.
+6. **`prisma.config.ts`:** Artefacto de v7, vacío con `export {}`. No borrar.
+
+7. **Middleware — `/settle` vs `/settlements`:** El check `startsWith("/settle")` matcheaba `/settlements`. Corrección: usar `pathname === "/settle" || pathname.startsWith("/settle/")` para rutas worker.
+
+8. **Controller con key dinámico:** Agregar `key` a `<Controller>` en arrays puede hacer que RHF desregistre el campo y pierda su valor. En `settle-form.tsx` se resolvió eliminando RHF y usando estado local directo.
+
+9. **Warning "Extra attributes from server":** `data-tag-assistant-prod-present` en `<html>` lo inyecta la extensión Google Tag Assistant del navegador. No es un bug del código.
+
+---
+
+## Lógica de Rendición (settle-form.tsx) — Diseño Actual
+
+- **Estado local** (no RHF): `useState<ItemState[]>` por producto
+- **BoxUnitStepper**: cuando `unitPerBox > 1`, muestra dos steppers lado a lado (Cajas + Unidades)
+- **Merma**: informacional, no reduce `vendido`. `calcSold = assigned - returned`
+- **Flujo**: el worker llena sobrante y merma para cada producto usando "Siguiente/Anterior"; en el último producto aparece el campo global "Monto total entregado"
+- **Submit**: itera todos los items, distribuye `amountPaid` proporcionalmente (`paid_i = due_i × (globalPaid / totalDue)`), evitando montos negativos en cualquier settlement
+- **API**: `totalSold = quantityAssigned - quantityReturned` (merma no afecta amountDue)
 
 ---
 
 ## TODOs Pendientes
 
-- [ ] **PWA:** Agregar `next-pwa` para que trabajadores instalen la app en celular
-- [ ] **Paginación:** Settlements y Reports con muchos registros necesitan paginación server-side
-- [ ] **Vista histórica assignments:** Actualmente solo muestra el día de hoy; agregar date picker para historial
-- [ ] **Notificaciones en tiempo real:** WebSocket o polling para alertar al admin cuando un trabajador rinde
-- [ ] **Export PDF/CSV:** En módulo settlements (marcado como TODO en UI)
-- [ ] **Multi-tenant:** El modelo está preparado para `organizationId` en el futuro
-- [ ] **Conectar BD de producción:** Ajustar `DATABASE_URL` para Supabase/Railway en producción
+- [ ] **PWA:** Agregar `next-pwa` para instalación en celular (trabajadores)
+- [ ] **Paginación:** Settlements y Reports con muchos registros
+- [ ] **Vista histórica assignments:** Date picker para ver asignaciones de días anteriores
+- [ ] **Notificaciones en tiempo real:** Alertar al admin cuando un trabajador rinde
+- [ ] **Export PDF/CSV:** Módulo settlements
+- [ ] **Conectar BD de producción:** Supabase/Railway
+- [ ] **Stock al rendir:** Validar si los sobrantes restauran el stock al crear un settlement (actualmente solo se restaura al eliminar un assignment pendiente)
+- [ ] **Merma en reportes:** Verificar que la merma aparezca correctamente en Tab 3 de Reportes ahora que no afecta el amountDue
 
 ---
 
 ## Escenarios de Prueba Pendientes
 
-1. **Login con rol incorrecto** → debe redirigir al destino correcto según rol
-2. **Asignar más stock del disponible** → API debe rechazar con 400
-3. **Rendir con sobrante + merma > asignado** → API rechaza (validación en `api/settlements/route.ts`)
-4. **Doble rendición** → segunda llamada devuelve "Ya rendida" (status 400)
-5. **Eliminación en cascada** → borrar empresa debe eliminar productos, assignments y mermas
+1. **Login con rol incorrecto** → redirige al destino correcto según rol
+2. **Asignar más stock del disponible** → API rechaza con 400
+3. **Rendir con sobrante > asignado** → API rechaza con "El sobrante supera lo asignado"
+4. **Doble rendición** → segunda llamada devuelve "Ya rendida" (400)
+5. **Eliminación en cascada** → borrar empresa elimina productos, assignments y mermas
 6. **Stock bajo en dashboard** → crear producto con `stock <= lowStockAlert` y verificar alerta
-7. **Ajuste de monto admin** → rendición con diferencia → admin ajusta desde Sheet detalle → diferencia queda en 0
-8. **Filtros de rendiciones** → filtrar por fecha + trabajador y verificar que los datos coincidan
-9. **Cálculo de comisión** → verificar Tab 1 de Reportes con comisión % vs comisión fija
-10. **Gráfico de ganancias** → toggle día/semana/mes en Tab 4 de Reportes
+7. **Ajuste de monto admin** → rendición con diferencia → admin ajusta → diferencia = 0
+8. **Filtros de rendiciones** → filtrar por fecha + trabajador
+9. **Cálculo de comisión** → Tab 1 Reportes con comisión % vs fija
+10. **Distribución proporcional de pago** → worker paga menos del total → cada settlement muestra diferencia proporcional (no negativa)
+11. **BoxUnitStepper** → verificar que cajas × unitPerBox + unidades nunca supere el máximo asignado
+12. **Asignación en cajas** → toggle cajas en assignments; valor guardado = cajas × unitPerBox en unidades

@@ -14,7 +14,7 @@ export default auth((req) => {
     nextUrl.pathname.startsWith("/settlements") ||
     nextUrl.pathname.startsWith("/reports")
   const isWorkerRoute = nextUrl.pathname.startsWith("/home") ||
-    nextUrl.pathname.startsWith("/settle")
+    nextUrl.pathname === "/settle" || nextUrl.pathname.startsWith("/settle/")
 
   if (!isLoggedIn && !isLoginPage) {
     return NextResponse.redirect(new URL("/login", nextUrl))
