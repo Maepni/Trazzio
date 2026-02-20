@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id        String    @id @default(cuid())
+  name      String
+  products  Product[]
+  createdAt DateTime  @default(now())
+}
+
+model Product {
+  id            String   @id @default(cuid())
+  name          String
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  costPrice     Decimal  @db.Decimal(10, 2)
+  salePrice     Decimal  @db.Decimal(10, 2)
+  unitPerBox    Int
+  lowStockAlert Int      @default(10)
+  stock         Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  assignments  Assignment[]
+  mermaItems   MermaItem[]
+  stockEntries StockEntry[]
+}
+
+model Worker {
+  id             String         @id @default(cuid())
+  name           String
+  phone          String?
+  commission     Decimal        @default(0) @db.Decimal(10, 2)
+  commissionType CommissionType @default(PERCENTAGE)
+  userId         String         @unique
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now())
+
+  assignments Assignment[]
+}
+
+model Assignment {
+  id        String   @id @default(cuid())
+  workerId  String
+  worker    Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  date      DateTime @default(now())
+
+  quantityAssigned Int
+  quantityReturned Int?
+  quantitySold     Int?
+
+  status AssignmentStatus @default(PENDING)
+
+  mermaItems MermaItem[]
+  settlement Settlement?
+}
+
+model Settlement {
+  id           String     @id @default(cuid())
+  assignmentId String     @unique
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  settledAt    DateTime   @default(now())
+
+  totalSold  Int
+  totalMerma Int
+  amountDue  Decimal @db.Decimal(10, 2)
+  amountPaid Decimal @db.Decimal(10, 2)
+  difference Decimal @db.Decimal(10, 2)
+  notes      String?
+}
+
+model MermaItem {
+  id           String     @id @default(cuid())
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity     Int
+  reason       String?
+  createdAt    DateTime   @default(now())
+}
+
+model StockEntry {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int
+  boxes     Int?
+  entryDate DateTime @default(now())
+  notes     String?
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  role      Role     @default(WORKER)
+  worker    Worker?
+  createdAt DateTime @default(now())
+}
+
+enum Role {
+  ADMIN
+  WORKER
+}
+
+enum AssignmentStatus {
+  PENDING
+  SETTLED
+}
+
+enum CommissionType {
+  PERCENTAGE
+  FIXED
+}
