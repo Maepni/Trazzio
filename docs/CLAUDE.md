@@ -1,7 +1,7 @@
 # CLAUDE.md — Contexto del Proyecto Trazzio
 
 ## Resumen
-Sistema web fullstack para gestionar ventas de conservas. Ciclo completo: recepción de mercadería → asignación a trabajadores → rendición diaria → reportes de ganancias, inventario y merma.
+Sistema web fullstack para gestionar ventas de conservas. Ciclo: recepción de mercadería → asignación a trabajadores → rendición diaria → reportes de ganancias, inventario y merma.
 
 - **Dos roles:** Admin (desktop/mobile) y Trabajador (mobile-first)
 - **Directorio:** `/home/mapins/Escritorio/trazzio/`
@@ -36,7 +36,7 @@ app/
 │   ├── stock           → Recepción de mercadería + historial + inventario
 │   ├── workers         → CRUD trabajadores + credenciales
 │   ├── assignments     → Asignaciones diarias (multi-producto)
-│   ├── settlements     → Rendiciones: cards semáforo + filtros + detalle + ajuste admin
+│   ├── settlements     → Rendiciones: cards agrupadas por trabajador/día
 │   └── reports         → 5 tabs: trabajadores, inventario, merma, ganancias, stock bajo
 ├── (worker)/
 │   ├── home            → Asignaciones del día + resumen (SSR)
@@ -72,10 +72,10 @@ MermaItem     id, assignmentId, productId, quantity, reason
 StockEntry    id, productId, quantity, boxes, entryDate, notes
 ```
 
-**Regla central (actualizada):**
+**Regla central:**
 - `vendido = asignado - sobrante` ← merma NO resta el vendido
 - `amountDue = vendido × salePrice`
-- La merma se registra en `MermaItem` para reportes del admin, pero el trabajador responde financieramente por todo lo no devuelto.
+- La merma se registra en `MermaItem` (solo informacional); el trabajador responde por todo lo no devuelto
 
 ---
 
@@ -94,11 +94,40 @@ NEXTAUTH_URL="http://localhost:3000"
 ```bash
 cd /home/mapins/Escritorio/trazzio
 npm run dev
-npm run db:push && npm run db:seed
-npx tsc --noEmit
+npx prisma db push && npm run db:seed   # reset + recrear tablas + seed
+npx tsc --noEmit                        # verificar tipos
 ```
 
+> ⚠️ `prisma migrate reset` borra las tablas pero NO las recrea (el proyecto usa `db push`, no migraciones). Siempre seguir con `npx prisma db push && npm run db:seed`.
+
 Seed crea: `admin@trazzio.com / admin123` y `trabajador@trazzio.com / worker123`
+
+---
+
+## Comportamiento Actual de los Módulos
+
+### Stock (Recepción de Mercadería)
+- **Flujo:** Seleccionar empresa → aparecen todos sus productos → ingresar **Cajas + Unidades** por separado (aditivo: total = cajas × unitPerBox + unidades)
+- Submit crea una `StockEntry` por producto con qty > 0 (múltiples POST en serie)
+
+### Asignaciones
+- **Flujo:** Seleccionar trabajador → seleccionar empresa → aparecen todos sus productos con stock > 0 → ingresar Cajas + Unidades por producto
+- Solo productos con qty > 0 se incluyen en el POST
+- La tabla muestra asignaciones agrupadas por trabajador
+
+### Rendición del Trabajador (`settle-form.tsx`)
+- **Estado local** (no RHF): `useState<ItemState[]>` por producto
+- **BoxUnitStepper** para sobrante (cajas + unidades), **Stepper simple** para merma (solo unidades)
+- **Monto al admin por producto**: cada producto tiene su propio input `amountPaid` — sin distribución proporcional
+- El último paso muestra resumen total + campo de notas global
+- Submit: itera items, usa `item.amountPaid` directamente para cada `Settlement`
+
+### Rendiciones Admin (`settlements-client.tsx`)
+- Cards agrupadas: **un card por trabajador/día** (agrupa todos sus productos)
+- El card muestra: worker, fecha, lista de productos, total a cobrar, estado
+- Al hacer clic: Sheet con tabla de todos los productos (vendido, a cobrar, pagó, diferencia)
+- Ajuste inline por producto individual dentro del Sheet (ícono lápiz por fila)
+- Agrupación es client-side por `workerId + date` (primeros 10 chars de `settledAt`)
 
 ---
 
@@ -116,10 +145,9 @@ return <ComponentClient initialData={serialize(data)} />
 const { data } = useQuery({ queryKey: [...], queryFn: ..., initialData })
 ```
 
-> **⚠️ CRÍTICO:** Prisma devuelve `Decimal`, `Date`, `BigInt` no serializables.
-> Siempre `serialize()` antes de pasar datos a Client Components.
+> **⚠️ CRÍTICO:** Prisma devuelve `Decimal`, `Date`, `BigInt` no serializables. Siempre `serialize()` antes de pasar datos a Client Components.
 
-### Formularios con Zod v4 + RHF v7 (solo admin)
+### Formularios Admin (Zod v4 + RHF v7)
 ```typescript
 // z.coerce.number() da tipo unknown → usar preprocess
 const schema = z.object({
@@ -128,11 +156,11 @@ const schema = z.object({
 resolver: zodResolver(schema) as Resolver<FormData>  // o "as any"
 ```
 
-> ⚠️ El `settle-form.tsx` del worker usa **estado local React** (no RHF) para evitar
-> bugs de sincronización con Controller + useFieldArray en arrays dinámicos.
-
-### shadcn/ui — FormLabel fuera de FormField
-`<FormLabel>` llama internamente a `useFormField()`, que lanza error si no está dentro de `<FormField><FormItem>`. Usar `<label className="text-sm font-medium leading-none">` para etiquetas fuera de ese contexto.
+### Inputs Numéricos
+- `Input` de shadcn (`components/ui/input.tsx`) previene scroll accidental: `onWheel → blur` automático para `type="number"`
+- Flechitas de spin eliminadas globalmente con `[appearance:textfield]`
+- Precios (`costPrice`, `salePrice`): usar `type="text"` + `inputMode="decimal"` + `autoComplete="off"` para evitar el bug del "." y el autocomplete del browser
+- Enteros: `type="text"` + `inputMode="numeric"` + `autoComplete="off"`
 
 ### Otras convenciones
 - **Archivos:** `kebab-case.tsx`. Admin en `components/admin/`, worker en `components/worker/`
@@ -141,7 +169,7 @@ resolver: zodResolver(schema) as Resolver<FormData>  // o "as any"
 - **Stock:** internamente en unidades; mostrar con `formatUnitsToBoxes(stock, unitPerBox)`
 - **Fechas:** `formatDate()` / `formatDateTime()` con zona `America/Lima`
 - **Colores:** azul `#1e3a5f`, naranja `#f97316`
-- **Gráficos:** Recharts con `<ResponsiveContainer>` + `<LineChart>` / `<BarChart>`
+- **Companies derivadas en client:** `Array.from(new Map(products.map(p => [p.company.id, p.company])).values())` — NO usar spread con `Map.values()` ni `Set` (error TS2802)
 
 ---
 
@@ -154,32 +182,11 @@ resolver: zodResolver(schema) as Resolver<FormData>  // o "as any"
 | `lib/utils.ts` | `formatCurrency`, `formatUnitsToBoxes`, `formatDate`, `getTodayStart/End`, `serialize` |
 | `middleware.ts` | Protección rutas por rol |
 | `components/providers.tsx` | SessionProvider + QueryClientProvider |
+| `components/ui/input.tsx` | Input shadcn con onWheel blur global para type=number |
 | `types/next-auth.d.ts` | Extensión Session (role, workerId, workerName) |
 | `prisma/schema.prisma` | Modelo completo con relaciones y cascades |
 | `prisma/seed.ts` | Datos demo |
 | `prisma/prisma.config.ts` | Vacío (`export {}`). No borrar — artefacto de v7 |
-
----
-
-## Módulos Implementados
-
-### Admin
-| Módulo | Componente | Descripción |
-|---|---|---|
-| Dashboard | `dashboard/page.tsx` + `dashboard-chart.tsx` | KPIs del día, gráfico barras ventas x trabajador, pendientes, stock bajo |
-| Empresas | `companies-client.tsx` | CRUD empresas + CRUD productos inline |
-| Stock | `stock-client.tsx` | Ingreso cajas/unidades con cálculo mutuo automático; inventario con columna Unidades; historial con columna Unidades |
-| Trabajadores | `workers-client.tsx` | CRUD con tipo comisión (% o fijo), credenciales login, reset password |
-| Asignaciones | `assignments-client.tsx` | Multi-producto x trabajador; toggle cajas/unidades por fila; columna Unidades + Valor Venta en tabla |
-| Rendiciones | `settlements-client.tsx` | Filtros fecha+trabajador, cards semáforo ✓/✗, Sheet detalle, ajuste monto admin |
-| Reportes | `reports-client.tsx` | 5 tabs: trabajadores, inventario, merma, ganancias (LineChart), stock bajo |
-
-### Worker (mobile-first)
-| Módulo | Componente | Descripción |
-|---|---|---|
-| Header | `worker-header.tsx` | Logo + nombre trabajador + botón Salir |
-| Home | `worker-home.tsx` | Asignaciones del día, pendientes vs rendidos |
-| Rendición | `settle-form.tsx` | Paso a paso; `BoxUnitStepper` (cajas + unidades juntos); merma informacional; pago global en último paso; distribución proporcional |
 
 ---
 
@@ -197,22 +204,15 @@ resolver: zodResolver(schema) as Resolver<FormData>  // o "as any"
 
 6. **`prisma.config.ts`:** Artefacto de v7, vacío con `export {}`. No borrar.
 
-7. **Middleware — `/settle` vs `/settlements`:** El check `startsWith("/settle")` matcheaba `/settlements`. Corrección: usar `pathname === "/settle" || pathname.startsWith("/settle/")` para rutas worker.
+7. **Middleware — `/settle` vs `/settlements`:** Check usa `pathname === "/settle" || pathname.startsWith("/settle/")` para no matchear `/settlements`.
 
-8. **Controller con key dinámico:** Agregar `key` a `<Controller>` en arrays puede hacer que RHF desregistre el campo y pierda su valor. En `settle-form.tsx` se resolvió eliminando RHF y usando estado local directo.
+8. **TS2802 — Map/Set spread:** `[...new Map(...).values()]` falla. Usar `Array.from(new Map(...).values())`.
 
-9. **Warning "Extra attributes from server":** `data-tag-assistant-prod-present` en `<html>` lo inyecta la extensión Google Tag Assistant del navegador. No es un bug del código.
+9. **`type="number"` + ".":** Los inputs de precio usan `type="text"` + `inputMode="decimal"`. El browser borra el valor al escribir `"5."` con `type="number"`. Nunca usar `type="number"` para precios.
 
----
+10. **Responsive worker — stepper overflow:** El `BoxUnitStepper` usa botones `w-10` (40px) y `CardContent` con `px-4` para evitar que el "+" se salga en pantallas de 360px.
 
-## Lógica de Rendición (settle-form.tsx) — Diseño Actual
-
-- **Estado local** (no RHF): `useState<ItemState[]>` por producto
-- **BoxUnitStepper**: cuando `unitPerBox > 1`, muestra dos steppers lado a lado (Cajas + Unidades)
-- **Merma**: informacional, no reduce `vendido`. `calcSold = assigned - returned`
-- **Flujo**: el worker llena sobrante y merma para cada producto usando "Siguiente/Anterior"; en el último producto aparece el campo global "Monto total entregado"
-- **Submit**: itera todos los items, distribuye `amountPaid` proporcionalmente (`paid_i = due_i × (globalPaid / totalDue)`), evitando montos negativos en cualquier settlement
-- **API**: `totalSold = quantityAssigned - quantityReturned` (merma no afecta amountDue)
+11. **Viewport móvil:** El layout worker usa `style={{ minHeight: "100dvh" }}` (dynamic viewport height) en lugar de `min-h-screen` para cubrir el área completa incluyendo cuando la barra del browser se oculta.
 
 ---
 
@@ -225,21 +225,22 @@ resolver: zodResolver(schema) as Resolver<FormData>  // o "as any"
 - [ ] **Export PDF/CSV:** Módulo settlements
 - [ ] **Conectar BD de producción:** Supabase/Railway
 - [ ] **Stock al rendir:** Validar si los sobrantes restauran el stock al crear un settlement (actualmente solo se restaura al eliminar un assignment pendiente)
-- [ ] **Merma en reportes:** Verificar que la merma aparezca correctamente en Tab 3 de Reportes ahora que no afecta el amountDue
+- [ ] **Merma en reportes:** Verificar que la merma aparezca correctamente en Tab 3 de Reportes
 
 ---
 
 ## Escenarios de Prueba Pendientes
 
-1. **Login con rol incorrecto** → redirige al destino correcto según rol
+1. **Login con rol incorrecto** → redirige al destino correcto
 2. **Asignar más stock del disponible** → API rechaza con 400
 3. **Rendir con sobrante > asignado** → API rechaza con "El sobrante supera lo asignado"
 4. **Doble rendición** → segunda llamada devuelve "Ya rendida" (400)
 5. **Eliminación en cascada** → borrar empresa elimina productos, assignments y mermas
-6. **Stock bajo en dashboard** → crear producto con `stock <= lowStockAlert` y verificar alerta
+6. **Stock bajo en dashboard** → producto con `stock <= lowStockAlert`
 7. **Ajuste de monto admin** → rendición con diferencia → admin ajusta → diferencia = 0
 8. **Filtros de rendiciones** → filtrar por fecha + trabajador
-9. **Cálculo de comisión** → Tab 1 Reportes con comisión % vs fija
-10. **Distribución proporcional de pago** → worker paga menos del total → cada settlement muestra diferencia proporcional (no negativa)
-11. **BoxUnitStepper** → verificar que cajas × unitPerBox + unidades nunca supere el máximo asignado
-12. **Asignación en cajas** → toggle cajas en assignments; valor guardado = cajas × unitPerBox en unidades
+9. **Distribución de pago por producto** → worker paga monto diferente por cada producto → cada settlement muestra su propia diferencia (no proporcional, no negativa)
+10. **BoxUnitStepper** → botones no se salen de pantalla en 360px; cajas × unitPerBox + unidades nunca supera el máximo asignado
+11. **Scroll en inputs** → hacer scroll encima de un número no cambia el valor
+12. **Precio con punto decimal** → escribir "5." en precio costo/venta no borra el valor
+13. **Agrupación admin** → worker con 3 productos → aparece 1 card (no 3) → click muestra 3 filas en Sheet
