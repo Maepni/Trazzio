@@ -30,6 +30,7 @@ export async function GET(req: Request) {
   // ADMIN
   if (workerId) {
     const balance = await getWorkerBalance(workerId)
+    if (!balance) return NextResponse.json({ error: "Trabajador no encontrado" }, { status: 404 })
     return NextResponse.json(balance)
   }
 
@@ -54,7 +55,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 })
   }
 
-  const body = await req.json()
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: "JSON inválido" }, { status: 400 })
+  }
   const parsed = schema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
