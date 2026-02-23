@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
-import { Plus, Pencil, Trash2, Users, Phone, Mail } from "lucide-react"
+import { Plus, Pencil, Trash2, Users, Phone, Mail, DollarSign } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 
 const createSchema = z.object({
@@ -41,6 +41,9 @@ export function WorkersClient({ initialWorkers }: { initialWorkers: any[] }) {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [editingWorker, setEditingWorker] = useState<any>(null)
+  const [payingWorker, setPayingWorker] = useState<any>(null)
+  const [payAmount, setPayAmount] = useState("")
+  const [payNotes, setPayNotes] = useState("")
 
   const { data: workers = initialWorkers } = useQuery({
     queryKey: ["workers"],
@@ -51,6 +54,18 @@ export function WorkersClient({ initialWorkers }: { initialWorkers: any[] }) {
     },
     initialData: initialWorkers,
   })
+
+  const { data: balances = [] } = useQuery({
+    queryKey: ["worker-balances"],
+    queryFn: async () => {
+      const res = await fetch("/api/payments")
+      if (!res.ok) return []
+      return res.json()
+    },
+  })
+
+  const getBalance = (workerId: string) =>
+    balances.find((b: any) => b.workerId === workerId)
 
   const createForm = useForm<CreateForm>({
     resolver: zodResolver(createSchema) as Resolver<CreateForm>,
@@ -100,6 +115,26 @@ export function WorkersClient({ initialWorkers }: { initialWorkers: any[] }) {
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["workers"] }); toast.success("Trabajador eliminado") },
     onError: () => toast.error("Error al eliminar"),
+  })
+
+  const payMutation = useMutation({
+    mutationFn: async ({ workerId, amount, notes }: { workerId: string; amount: number; notes: string }) => {
+      const res = await fetch("/api/payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workerId, amount, notes }),
+      })
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Error") }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["worker-balances"] })
+      toast.success("Pago registrado")
+      setPayingWorker(null)
+      setPayAmount("")
+      setPayNotes("")
+    },
+    onError: (e: any) => toast.error(e.message),
   })
 
   const openEdit = (worker: any) => {
@@ -241,9 +276,31 @@ export function WorkersClient({ initialWorkers }: { initialWorkers: any[] }) {
                           ? `${Number(w.commission)}% comisión`
                           : `${formatCurrency(w.commission)} fijo`}
                       </Badge>
+                      {(() => {
+                        const bal = getBalance(w.id)
+                        return bal && bal.pendingBalance > 0 ? (
+                          <p className="text-xs text-orange-600 font-medium mt-0.5">
+                            Pendiente: {formatCurrency(bal.pendingBalance)}
+                          </p>
+                        ) : null
+                      })()}
                     </div>
                   </div>
                   <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                      title="Registrar pago"
+                      onClick={() => {
+                        const bal = getBalance(w.id)
+                        setPayingWorker({ ...w, balance: bal })
+                        setPayAmount(bal ? String(bal.pendingBalance) : "")
+                        setPayNotes("")
+                      }}
+                    >
+                      <DollarSign className="h-3.5 w-3.5" />
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(w)}>
                       <Pencil className="h-3 w-3" />
                     </Button>
@@ -271,6 +328,60 @@ export function WorkersClient({ initialWorkers }: { initialWorkers: any[] }) {
           ))}
         </div>
       )}
+
+      <Dialog open={!!payingWorker} onOpenChange={(v) => { if (!v) setPayingWorker(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Registrar Pago — {payingWorker?.name}</DialogTitle>
+          </DialogHeader>
+          {payingWorker?.balance && (
+            <div className="bg-orange-50 rounded-lg p-3 text-sm text-orange-800 space-y-1">
+              <p>Total ganado: <strong>{formatCurrency(payingWorker.balance.totalEarned)}</strong></p>
+              <p>Total pagado: <strong>{formatCurrency(payingWorker.balance.totalPaid)}</strong></p>
+              <p className="text-base font-bold">
+                Pendiente: {formatCurrency(payingWorker.balance.pendingBalance)}
+              </p>
+            </div>
+          )}
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-medium">Monto a pagar (S/)</label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                value={payAmount}
+                onChange={(e) => setPayAmount(e.target.value)}
+                placeholder="0.00"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Notas (opcional)</label>
+              <Input
+                value={payNotes}
+                onChange={(e) => setPayNotes(e.target.value)}
+                placeholder="Pago semanal, etc."
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setPayingWorker(null)}>Cancelar</Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700"
+              disabled={payMutation.isPending || !payAmount || Number(payAmount) <= 0}
+              onClick={() => payMutation.mutate({
+                workerId: payingWorker.id,
+                amount: Number(payAmount),
+                notes: payNotes,
+              })}
+            >
+              {payMutation.isPending ? "Registrando..." : "Registrar Pago"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
