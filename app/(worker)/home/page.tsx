@@ -28,31 +28,29 @@ export default async function WorkerHomePage() {
 
   // Calcular balance pendiente del trabajador
   let pendingBalance = 0
-  if (session?.user?.workerId) {
-    const workerWithData = await prisma.worker.findUnique({
-      where: { id: session.user.workerId },
-      include: {
-        payments: true,
-        assignments: {
-          where: { status: "SETTLED" },
-          include: { settlement: true },
-        },
+  const workerWithData = await prisma.worker.findUnique({
+    where: { id: session.user.workerId },
+    include: {
+      payments: true,
+      assignments: {
+        where: { status: "SETTLED" },
+        include: { settlement: true },
       },
-    })
+    },
+  })
 
-    if (workerWithData) {
-      const totalEarned = workerWithData.assignments.reduce((acc, a) => {
-        if (!a.settlement) return acc
-        const amountDue = Number(a.settlement.amountDue)
-        return acc + (
-          workerWithData.commissionType === "PERCENTAGE"
-            ? amountDue * (Number(workerWithData.commission) / 100)
-            : (a.quantitySold ?? 0) * Number(workerWithData.commission)
-        )
-      }, 0)
-      const totalPaid = workerWithData.payments.reduce((acc, p) => acc + Number(p.amount), 0)
-      pendingBalance = Math.round((totalEarned - totalPaid) * 100) / 100
-    }
+  if (workerWithData) {
+    const totalEarned = workerWithData.assignments.reduce((acc, a) => {
+      if (!a.settlement) return acc
+      const amountDue = Number(a.settlement.amountDue)
+      return acc + (
+        workerWithData.commissionType === "PERCENTAGE"
+          ? amountDue * (Number(workerWithData.commission) / 100)
+          : (a.quantitySold ?? 0) * Number(workerWithData.commission)
+      )
+    }, 0)
+    const totalPaid = workerWithData.payments.reduce((acc, p) => acc + Number(p.amount), 0)
+    pendingBalance = Math.max(0, Math.round((totalEarned - totalPaid) * 100) / 100)
   }
 
   return (
