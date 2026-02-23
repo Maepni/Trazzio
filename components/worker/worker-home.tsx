@@ -4,15 +4,16 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { formatCurrency, formatUnitsToBoxes, formatDate } from "@/lib/utils"
-import { Package, CheckCircle2, Clock, ArrowRight } from "lucide-react"
+import { Package, CheckCircle2, Clock, ArrowRight, DollarSign } from "lucide-react"
 import Link from "next/link"
 
 interface Props {
   assignments: any[]
   workerName: string
+  pendingBalance: number
 }
 
-export function WorkerHome({ assignments, workerName }: Props) {
+export function WorkerHome({ assignments, workerName, pendingBalance }: Props) {
   const pending = assignments.filter((a) => a.status === "PENDING")
   const settled = assignments.filter((a) => a.status === "SETTLED")
   const totalPending = pending.reduce((sum, a) => sum + a.quantityAssigned, 0)
@@ -24,6 +25,26 @@ export function WorkerHome({ assignments, workerName }: Props) {
         <h2 className="text-xl font-bold text-[#1e3a5f]">¡Hola, {workerName}!</h2>
         <p className="text-gray-500 text-sm">{formatDate(new Date())}</p>
       </div>
+
+      {/* Card de balance pendiente */}
+      {pendingBalance > 0 && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs text-orange-600 font-medium uppercase tracking-wide">Tu balance pendiente</p>
+            <p className="text-2xl font-bold text-orange-700 mt-0.5">
+              {formatCurrency(pendingBalance)}
+            </p>
+          </div>
+          <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center">
+            <DollarSign className="h-5 w-5 text-orange-600" />
+          </div>
+        </div>
+      )}
+      {pendingBalance === 0 && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+          <p className="text-sm text-green-700 font-medium">Sin pagos pendientes</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <Card className="border-0 shadow-sm bg-[#1e3a5f] text-white">
