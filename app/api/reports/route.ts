@@ -35,7 +35,9 @@ export async function GET(req: Request) {
 
   const totalRevenue = filtered.reduce((sum: number, s: any) => sum + Number(s.amountDue), 0)
   const totalProfit = filtered.reduce((sum: number, s: any) => {
-    const margin = Number(s.assignment.product.salePrice) - Number(s.assignment.product.costPrice)
+    const effectiveSalePrice = Number(s.assignment.customSalePrice ?? s.assignment.product.salePrice)
+    const costPrice = Number(s.assignment.product.costPrice)
+    const margin = effectiveSalePrice - costPrice
     return sum + s.totalSold * margin
   }, 0)
   const totalMerma = filtered.reduce((sum: number, s: any) => sum + s.totalMerma, 0)
@@ -45,7 +47,9 @@ export async function GET(req: Request) {
   for (const s of filtered) {
     const date = new Date(s.settledAt).toISOString().split("T")[0]
     if (!dailyMap[date]) dailyMap[date] = { date, profit: 0, revenue: 0 }
-    const margin = Number(s.assignment.product.salePrice) - Number(s.assignment.product.costPrice)
+    const effectiveSalePrice = Number(s.assignment.customSalePrice ?? s.assignment.product.salePrice)
+    const costPrice = Number(s.assignment.product.costPrice)
+    const margin = effectiveSalePrice - costPrice
     dailyMap[date].profit += s.totalSold * margin
     dailyMap[date].revenue += Number(s.amountDue)
   }

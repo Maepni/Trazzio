@@ -84,9 +84,10 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
   const selectedItems: { name: string; qty: number; salePrice: number; unitPerBox: number }[] = companyProducts
     .filter((p: any) => { const q = productQtys[p.id]; return q && (q.boxes > 0 || q.units > 0) })
     .map((p: any) => {
-      const q = productQtys[p.id] || { boxes: 0, units: 0 }
+      const q = productQtys[p.id] || { boxes: 0, units: 0, customSalePrice: "" }
       const qty = q.boxes * p.unitPerBox + q.units
-      return { name: p.name as string, qty, salePrice: Number(p.salePrice), unitPerBox: p.unitPerBox as number }
+      const effectivePrice = q.customSalePrice !== "" ? Number(q.customSalePrice) : Number(p.salePrice)
+      return { name: p.name as string, qty, salePrice: effectivePrice, unitPerBox: p.unitPerBox as number }
     })
 
   const handleSubmit = () => {
@@ -342,7 +343,10 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
                       {a.quantityAssigned} und.
                     </TableCell>
                     <TableCell className="text-right text-gray-600">
-                      {formatCurrency(a.quantityAssigned * Number(a.product.salePrice))}
+                      {formatCurrency(a.quantityAssigned * Number(a.customSalePrice ?? a.product.salePrice))}
+                      {a.customSalePrice != null && (
+                        <span className="ml-1 text-xs text-orange-500">(especial)</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-center">
                       <Badge variant={a.status === "SETTLED" ? "default" : "secondary"}
