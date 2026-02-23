@@ -295,7 +295,7 @@ export function WorkersClient({ initialWorkers }: { initialWorkers: any[] }) {
                       onClick={() => {
                         const bal = getBalance(w.id)
                         setPayingWorker({ ...w, balance: bal })
-                        setPayAmount(bal ? String(bal.pendingBalance) : "")
+                        setPayAmount(bal && bal.pendingBalance > 0 ? String(bal.pendingBalance) : "")
                         setPayNotes("")
                       }}
                     >
@@ -370,7 +370,7 @@ export function WorkersClient({ initialWorkers }: { initialWorkers: any[] }) {
             <Button variant="outline" onClick={() => setPayingWorker(null)}>Cancelar</Button>
             <Button
               className="bg-green-600 hover:bg-green-700"
-              disabled={payMutation.isPending || !payAmount || Number(payAmount) <= 0}
+              disabled={payMutation.isPending || !payAmount || !Number.isFinite(Number(payAmount)) || Number(payAmount) <= 0}
               onClick={() => payMutation.mutate({
                 workerId: payingWorker.id,
                 amount: Number(payAmount),
