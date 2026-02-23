@@ -227,7 +227,8 @@ export function CompaniesClient({ initialCompanies }: { initialCompanies: any[] 
                                    : product.category === "CHOCOLATE" ? "Chocolate"
                                    : product.category === "LECHE" ? "Leche"
                                    : product.category === "ARROZ" ? "Arroz"
-                                   : "Otro"}
+                                   : product.category === "OTRO" ? "Otro"
+                                   : "Conserva"}
                                 </Badge>
                               </div>
                             </TableCell>
