@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { Plus, Pencil } from "lucide-react"
 
 const schema = z.object({
@@ -18,6 +19,8 @@ const schema = z.object({
   salePrice: z.string().min(1, "Requerido"),
   unitPerBox: z.string().min(1, "Requerido"),
   lowStockAlert: z.string().default("10"),
+  category: z.enum(["CONSERVA", "CHOCOLATE", "LECHE", "ARROZ", "OTRO"]).default("CONSERVA"),
+  isSpecial: z.boolean().default(false),
 })
 type ProductForm = z.infer<typeof schema>
 
@@ -41,8 +44,10 @@ export function ProductDialog({ companyId, companyName, product }: Props) {
           salePrice: String(Number(product.salePrice)),
           unitPerBox: String(product.unitPerBox),
           lowStockAlert: String(product.lowStockAlert),
+          category: (product.category as "CONSERVA" | "CHOCOLATE" | "LECHE" | "ARROZ" | "OTRO") ?? "CONSERVA",
+          isSpecial: product.isSpecial ?? false,
         }
-      : { lowStockAlert: "10" },
+      : { lowStockAlert: "10", category: "CONSERVA" as const, isSpecial: false },
   })
 
   const mutation = useMutation({
@@ -179,6 +184,42 @@ export function ProductDialog({ companyId, companyName, product }: Props) {
                 </FormItem>
               )} />
             </div>
+            <FormField control={form.control} name="category" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Categoría</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar categoría" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="CONSERVA">Conserva</SelectItem>
+                    <SelectItem value="CHOCOLATE">Chocolate</SelectItem>
+                    <SelectItem value="LECHE">Leche</SelectItem>
+                    <SelectItem value="ARROZ">Arroz</SelectItem>
+                    <SelectItem value="OTRO">Otro</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="isSpecial" render={({ field }) => (
+              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                <div>
+                  <FormLabel className="cursor-pointer">Producto especial</FormLabel>
+                  <p className="text-xs text-gray-500">Marcar si no es una conserva estándar</p>
+                </div>
+                <FormControl>
+                  <input
+                    type="checkbox"
+                    checked={field.value}
+                    onChange={field.onChange}
+                    className="h-4 w-4 accent-orange-500"
+                  />
+                </FormControl>
+              </FormItem>
+            )} />
             <div className="flex gap-2 justify-end pt-2">
               {isEdit && (
                 <Button type="button" variant="destructive" size="sm"

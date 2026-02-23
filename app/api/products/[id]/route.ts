@@ -9,6 +9,8 @@ const schema = z.object({
   salePrice: z.number().positive().optional(),
   unitPerBox: z.number().int().positive().optional(),
   lowStockAlert: z.number().int().min(0).optional(),
+  category: z.enum(["CONSERVA", "CHOCOLATE", "LECHE", "ARROZ", "OTRO"]).optional(),
+  isSpecial: z.boolean().optional(),
 })
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {

@@ -214,7 +214,23 @@ export function CompaniesClient({ initialCompanies }: { initialCompanies: any[] 
                       <TableBody>
                         {company.products.map((product: any) => (
                           <TableRow key={product.id}>
-                            <TableCell className="font-medium">{product.name}</TableCell>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <span>{product.name}</span>
+                                {product.isSpecial && (
+                                  <Badge className="text-xs bg-orange-100 text-orange-700 border border-orange-200 hover:bg-orange-100">
+                                    Especial
+                                  </Badge>
+                                )}
+                                <Badge variant="outline" className="text-xs text-gray-500">
+                                  {product.category === "CONSERVA" ? "Conserva"
+                                   : product.category === "CHOCOLATE" ? "Chocolate"
+                                   : product.category === "LECHE" ? "Leche"
+                                   : product.category === "ARROZ" ? "Arroz"
+                                   : "Otro"}
+                                </Badge>
+                              </div>
+                            </TableCell>
                             <TableCell className="text-right text-gray-600">
                               {formatCurrency(product.costPrice)}
                             </TableCell>

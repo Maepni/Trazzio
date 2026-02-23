@@ -10,6 +10,8 @@ const schema = z.object({
   salePrice: z.number().positive(),
   unitPerBox: z.number().int().positive(),
   lowStockAlert: z.number().int().min(0).default(10),
+  category: z.enum(["CONSERVA", "CHOCOLATE", "LECHE", "ARROZ", "OTRO"]).optional().default("CONSERVA"),
+  isSpecial: z.boolean().optional().default(false),
 })
 
 export async function GET() {
