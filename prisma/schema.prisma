@@ -15,16 +15,18 @@ model Company {
 }
 
 model Product {
-  id            String   @id @default(cuid())
+  id            String          @id @default(cuid())
   name          String
   companyId     String
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  costPrice     Decimal  @db.Decimal(10, 2)
-  salePrice     Decimal  @db.Decimal(10, 2)
+  company       Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  costPrice     Decimal         @db.Decimal(10, 2)
+  salePrice     Decimal         @db.Decimal(10, 2)
   unitPerBox    Int
-  lowStockAlert Int      @default(10)
-  stock         Int      @default(0)
-  createdAt     DateTime @default(now())
+  lowStockAlert Int             @default(10)
+  stock         Int             @default(0)
+  category      ProductCategory @default(CONSERVA)
+  isSpecial     Boolean         @default(false)
+  createdAt     DateTime        @default(now())
 
   assignments  Assignment[]
   mermaItems   MermaItem[]
@@ -42,6 +44,7 @@ model Worker {
   createdAt      DateTime       @default(now())
 
   assignments Assignment[]
+  payments    WorkerPayment[]
 }
 
 model Assignment {
@@ -55,6 +58,7 @@ model Assignment {
   quantityAssigned Int
   quantityReturned Int?
   quantitySold     Int?
+  customSalePrice  Decimal? @db.Decimal(10, 2)
 
   status AssignmentStatus @default(PENDING)
 
@@ -97,6 +101,16 @@ model StockEntry {
   notes     String?
 }
 
+model WorkerPayment {
+  id        String   @id @default(cuid())
+  workerId  String
+  worker    Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  amount    Decimal  @db.Decimal(10, 2)
+  paidAt    DateTime @default(now())
+  notes     String?
+  createdAt DateTime @default(now())
+}
+
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -119,4 +133,12 @@ enum AssignmentStatus {
 enum CommissionType {
   PERCENTAGE
   FIXED
+}
+
+enum ProductCategory {
+  CONSERVA
+  CHOCOLATE
+  LECHE
+  ARROZ
+  OTRO
 }
