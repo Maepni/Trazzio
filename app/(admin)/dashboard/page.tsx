@@ -43,9 +43,9 @@ export default async function DashboardPage() {
   )
   const totalProfit = settledToday.reduce((sum: number, s: any) => {
     const sold = s.totalSold
-    const salePrice = Number(s.assignment.product.salePrice)
+    const effectiveSalePrice = Number(s.assignment.customSalePrice ?? s.assignment.product.salePrice)
     const costPrice = Number(s.assignment.product.costPrice)
-    return sum + sold * (salePrice - costPrice)
+    return sum + sold * (effectiveSalePrice - costPrice)
   }, 0)
 
   // Bar chart data: revenue per worker today

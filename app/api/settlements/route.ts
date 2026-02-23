@@ -65,7 +65,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "El sobrante supera lo asignado" }, { status: 400 })
   }
 
-  const amountDue = totalSold * Number(assignment.product.salePrice)
+  const effectiveSalePrice = Number(assignment.customSalePrice ?? assignment.product.salePrice)
+  const amountDue = totalSold * effectiveSalePrice
   const difference = amountDue - amountPaid
 
   const settlement = await prisma.$transaction(async (tx: any) => {

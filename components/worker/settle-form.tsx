@@ -17,6 +17,7 @@ type ItemState = {
   companyName: string
   quantityAssigned: number
   salePrice: number
+  customSalePrice: number | null
   unitPerBox: number
   quantityReturned: number
   mermaQuantity: number
@@ -104,6 +105,7 @@ export function SettleForm({ assignments }: { assignments: any[] }) {
       companyName: a.product.company.name,
       quantityAssigned: a.quantityAssigned,
       salePrice: Number(a.product.salePrice),
+      customSalePrice: a.customSalePrice != null ? Number(a.customSalePrice) : null,
       unitPerBox: a.product.unitPerBox,
       quantityReturned: 0,
       mermaQuantity: 0,
@@ -123,7 +125,7 @@ export function SettleForm({ assignments }: { assignments: any[] }) {
   const isLast = currentIdx === items.length - 1
 
   const calcSold = (item: ItemState) => Math.max(0, item.quantityAssigned - item.quantityReturned)
-  const calcDue = (item: ItemState) => calcSold(item) * item.salePrice
+  const calcDue = (item: ItemState) => calcSold(item) * (item.customSalePrice ?? item.salePrice)
   const calcPaid = (item: ItemState) => Number(item.amountPaid) || 0
 
   const totalDue = items.reduce((sum, item) => sum + calcDue(item), 0)
@@ -298,6 +300,12 @@ export function SettleForm({ assignments }: { assignments: any[] }) {
 
           {/* Resumen del producto */}
           <div className="bg-gray-50 rounded-xl p-4 space-y-1.5">
+            <p className="text-xs text-gray-500">
+              Precio: {formatCurrency(current.customSalePrice ?? current.salePrice)}
+              {current.customSalePrice != null && (
+                <span className="ml-1 text-orange-500 font-medium">(precio especial)</span>
+              )}
+            </p>
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Vendido:</span>
               <span className="font-semibold">{calcSold(current)} und.</span>

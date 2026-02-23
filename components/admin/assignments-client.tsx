@@ -20,7 +20,7 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
   const [open, setOpen] = useState(false)
   const [workerId, setWorkerId] = useState("")
   const [selectedCompanyId, setSelectedCompanyId] = useState("")
-  const [productQtys, setProductQtys] = useState<Record<string, { boxes: number; units: number }>>({})
+  const [productQtys, setProductQtys] = useState<Record<string, { boxes: number; units: number; customSalePrice: string }>>({})
 
   const { data: workers = initialWorkers } = useQuery({
     queryKey: ["workers"],
@@ -40,7 +40,7 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
   })
 
   const mutation = useMutation({
-    mutationFn: async (data: { workerId: string; items: { productId: string; quantityAssigned: number }[] }) => {
+    mutationFn: async (data: { workerId: string; items: { productId: string; quantityAssigned: number; customSalePrice: number | null }[] }) => {
       const res = await fetch("/api/assignments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -98,8 +98,12 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
         return q && (q.boxes > 0 || q.units > 0)
       })
       .map((p: any) => {
-        const q = productQtys[p.id] || { boxes: 0, units: 0 }
-        return { productId: p.id, quantityAssigned: q.boxes * p.unitPerBox + q.units }
+        const q = productQtys[p.id] || { boxes: 0, units: 0, customSalePrice: "" }
+        return {
+          productId: p.id,
+          quantityAssigned: q.boxes * p.unitPerBox + q.units,
+          customSalePrice: q.customSalePrice !== "" ? Number(q.customSalePrice) : null,
+        }
       })
     if (items.length === 0) { toast.error("Ingresa al menos una cantidad"); return }
     mutation.mutate({ workerId, items })
@@ -163,7 +167,7 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
                   <label className="text-sm font-medium leading-none">Cantidades por producto</label>
                   <div className="border border-gray-100 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
                     {companyProducts.map((p: any, idx: number) => {
-                      const q = productQtys[p.id] || { boxes: 0, units: 0 }
+                      const q = productQtys[p.id] || { boxes: 0, units: 0, customSalePrice: "" }
                       const total = q.boxes * p.unitPerBox + q.units
                       const maxBoxes = Math.floor(p.stock / p.unitPerBox)
                       const maxUnits = p.stock - q.boxes * p.unitPerBox
@@ -198,7 +202,7 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
                                     const newMaxUnits = p.stock - boxes * p.unitPerBox
                                     setProductQtys(prev => ({
                                       ...prev,
-                                      [p.id]: { boxes, units: Math.min(q.units, newMaxUnits) },
+                                      [p.id]: { ...q, boxes, units: Math.min(q.units, newMaxUnits) },
                                     }))
                                   }}
                                 />
@@ -232,11 +236,29 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
                                 className="h-8 text-sm"
                                 onChange={(e) => setProductQtys(prev => ({
                                   ...prev,
-                                  [p.id]: { boxes: 0, units: Math.max(0, Math.min(p.stock, Number(e.target.value) || 0)) },
+                                  [p.id]: { ...q, boxes: 0, units: Math.max(0, Math.min(p.stock, Number(e.target.value) || 0)) },
                                 }))}
                               />
                             </div>
                           )}
+                          <div className="mt-2">
+                            <p className="text-xs text-gray-500 mb-1">
+                              Precio venta personalizado
+                              <span className="text-gray-400 ml-1">(vacío = S/ {formatCurrency(p.salePrice)})</span>
+                            </p>
+                            <Input
+                              type="text"
+                              inputMode="decimal"
+                              autoComplete="off"
+                              placeholder={`S/ ${formatCurrency(p.salePrice)}`}
+                              value={q.customSalePrice}
+                              onChange={(e) => setProductQtys(prev => ({
+                                ...prev,
+                                [p.id]: { ...q, customSalePrice: e.target.value },
+                              }))}
+                              className="h-8 text-sm"
+                            />
+                          </div>
                         </div>
                       )
                     })}

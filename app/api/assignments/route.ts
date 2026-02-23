@@ -7,6 +7,10 @@ import { getTodayStart, getTodayEnd } from "@/lib/utils"
 const itemSchema = z.object({
   productId: z.string().min(1),
   quantityAssigned: z.number().int().positive(),
+  customSalePrice: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? null : Number(v)),
+    z.number().positive().nullable().optional()
+  ),
 })
 const schema = z.object({
   workerId: z.string().min(1),
@@ -48,7 +52,7 @@ export async function POST(req: Request) {
         }
         await tx.product.update({ where: { id: item.productId }, data: { stock: { decrement: item.quantityAssigned } } })
         const assignment = await tx.assignment.create({
-          data: { workerId, productId: item.productId, quantityAssigned: item.quantityAssigned },
+          data: { workerId, productId: item.productId, quantityAssigned: item.quantityAssigned, customSalePrice: item.customSalePrice ?? null },
           include: { worker: true, product: { include: { company: true } } },
         })
         created.push(assignment)
