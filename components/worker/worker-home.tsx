@@ -94,7 +94,10 @@ export function WorkerHome({ assignments, workerName, pendingBalance }: Props) {
                     <p className="font-bold text-gray-900">
                       {formatUnitsToBoxes(a.quantityAssigned, a.product.unitPerBox)}
                     </p>
-                    <p className="text-xs text-gray-400">{formatCurrency(a.product.salePrice)} c/u</p>
+                    <p className="text-xs text-gray-400">
+                      {formatCurrency(a.customSalePrice != null ? Number(a.customSalePrice) : a.product.salePrice)} c/u
+                      {a.customSalePrice != null && <span className="ml-1 text-orange-400">(especial)</span>}
+                    </p>
                   </div>
                 </CardContent>
               </Card>

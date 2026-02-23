@@ -13,6 +13,8 @@ export default async function SettlePage() {
   const todayStart = getTodayStart()
   const todayEnd = getTodayEnd()
 
+  // customSalePrice es un campo escalar del modelo Assignment (no una relación),
+  // por lo que Prisma lo devuelve automáticamente sin necesidad de incluirlo explícitamente.
   const pendingAssignments = await prisma.assignment.findMany({
     where: {
       workerId: session.user.workerId,
