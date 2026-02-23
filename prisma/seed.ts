@@ -41,6 +41,8 @@ async function main() {
       unitPerBox: 48,
       lowStockAlert: 50,
       stock: 200,
+      category: "CONSERVA",
+      isSpecial: false,
     },
   })
   await prisma.product.upsert({
@@ -55,6 +57,8 @@ async function main() {
       unitPerBox: 24,
       lowStockAlert: 30,
       stock: 120,
+      category: "CONSERVA",
+      isSpecial: false,
     },
   })
   await prisma.product.upsert({
@@ -69,6 +73,40 @@ async function main() {
       unitPerBox: 24,
       lowStockAlert: 25,
       stock: 80,
+      category: "CONSERVA",
+      isSpecial: false,
+    },
+  })
+  await prisma.product.upsert({
+    where: { id: "product-demo-4" },
+    update: {},
+    create: {
+      id: "product-demo-4",
+      name: "Chocolates Sublime x24un",
+      companyId: company1.id,
+      costPrice: 18.0,
+      salePrice: 28.0,
+      unitPerBox: 12,
+      lowStockAlert: 10,
+      stock: 60,
+      category: "CHOCOLATE",
+      isSpecial: true,
+    },
+  })
+  await prisma.product.upsert({
+    where: { id: "product-demo-5" },
+    update: {},
+    create: {
+      id: "product-demo-5",
+      name: "Leche Gloria x410ml",
+      companyId: company2.id,
+      costPrice: 3.8,
+      salePrice: 5.8,
+      unitPerBox: 24,
+      lowStockAlert: 20,
+      stock: 144,
+      category: "LECHE",
+      isSpecial: true,
     },
   })
   console.log("✅ Productos creados")
