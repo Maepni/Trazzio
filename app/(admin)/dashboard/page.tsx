@@ -8,6 +8,8 @@ import {
   TrendingUp, PackageSearch, Users, AlertTriangle, Clock, BarChart3
 } from "lucide-react"
 
+export const dynamic = 'force-dynamic'
+
 export default async function DashboardPage() {
   const todayStart = getTodayStart()
   const todayEnd = getTodayEnd()

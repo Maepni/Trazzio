@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma"
 import { AssignmentsClient } from "@/components/admin/assignments-client"
 import { getTodayStart, getTodayEnd, serialize } from "@/lib/utils"
 
+export const dynamic = 'force-dynamic'
+
 export default async function AssignmentsPage() {
   const todayStart = getTodayStart()
   const todayEnd = getTodayEnd()

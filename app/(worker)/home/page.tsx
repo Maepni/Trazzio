@@ -4,6 +4,8 @@ import { redirect } from "next/navigation"
 import { WorkerHome } from "@/components/worker/worker-home"
 import { getTodayStart, getTodayEnd, serialize } from "@/lib/utils"
 
+export const dynamic = 'force-dynamic'
+
 export default async function WorkerHomePage() {
   const session = await auth()
   if (!session || !session.user.workerId) redirect("/login")

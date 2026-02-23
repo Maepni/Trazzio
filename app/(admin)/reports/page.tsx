@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma"
 import { ReportsClient } from "@/components/admin/reports-client"
 import { serialize } from "@/lib/utils"
 
+export const dynamic = 'force-dynamic'
+
 export default async function ReportsPage() {
   const [workers, companies, products] = await Promise.all([
     prisma.worker.findMany({ orderBy: { name: "asc" } }),

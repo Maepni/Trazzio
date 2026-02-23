@@ -4,6 +4,8 @@ import { redirect } from "next/navigation"
 import { SettleForm } from "@/components/worker/settle-form"
 import { getTodayStart, getTodayEnd, serialize } from "@/lib/utils"
 
+export const dynamic = 'force-dynamic'
+
 export default async function SettlePage() {
   const session = await auth()
   if (!session || !session.user.workerId) redirect("/login")

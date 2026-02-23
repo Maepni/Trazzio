@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma"
 import { SettlementsClient } from "@/components/admin/settlements-client"
 import { getTodayStart, getTodayEnd, serialize } from "@/lib/utils"
 
+export const dynamic = 'force-dynamic'
+
 export default async function SettlementsPage() {
   const todayStart = getTodayStart()
   const todayEnd = getTodayEnd()
