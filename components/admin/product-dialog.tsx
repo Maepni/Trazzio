@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { Plus, Pencil } from "lucide-react"
+import { getProductLabels, PRODUCT_TYPE_OPTIONS, type ProductType } from "@/lib/product-types"
 
 const schema = z.object({
   name: z.string().min(1, "Requerido"),
@@ -19,8 +19,7 @@ const schema = z.object({
   salePrice: z.string().min(1, "Requerido"),
   unitPerBox: z.string().min(1, "Requerido"),
   lowStockAlert: z.string().default("10"),
-  category: z.enum(["CONSERVA", "CHOCOLATE", "LECHE", "ARROZ", "OTRO"]).default("CONSERVA"),
-  isSpecial: z.boolean().default(false),
+  productType: z.enum(["ESTANDAR", "LECHE", "ARROZ"]).default("ESTANDAR"),
 })
 type ProductForm = z.infer<typeof schema>
 
@@ -44,10 +43,9 @@ export function ProductDialog({ companyId, companyName, product }: Props) {
           salePrice: String(Number(product.salePrice)),
           unitPerBox: String(product.unitPerBox),
           lowStockAlert: String(product.lowStockAlert),
-          category: (product.category as "CONSERVA" | "CHOCOLATE" | "LECHE" | "ARROZ" | "OTRO") ?? "CONSERVA",
-          isSpecial: product.isSpecial ?? false,
+          productType: (product.productType as ProductType) ?? "ESTANDAR",
         }
-      : { lowStockAlert: "10", category: "CONSERVA" as const, isSpecial: false },
+      : { lowStockAlert: "10", productType: "ESTANDAR" as const },
   })
 
   const mutation = useMutation({
@@ -152,25 +150,58 @@ export function ProductDialog({ companyId, companyName, product }: Props) {
                 </FormItem>
               )} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <FormField control={form.control} name="unitPerBox" render={({ field }) => (
+            <FormField control={form.control} name="productType" render={({ field }) => {
+              const labels = getProductLabels(field.value)
+              return (
                 <FormItem>
-                  <FormLabel>Unidades por Caja</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="24"
-                      autoComplete="off"
-                      {...field}
-                    />
-                  </FormControl>
+                  <FormLabel>Tipo de producto</FormLabel>
+                  <div className="flex flex-col gap-1.5">
+                    {PRODUCT_TYPE_OPTIONS.map((opt) => (
+                      <label
+                        key={opt.value}
+                        className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors ${
+                          field.value === opt.value
+                            ? "border-[#1e3a5f] bg-[#1e3a5f]/5"
+                            : "border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          value={opt.value}
+                          checked={field.value === opt.value}
+                          onChange={() => field.onChange(opt.value)}
+                          className="accent-[#1e3a5f]"
+                        />
+                        <span className="text-sm">{opt.label}</span>
+                      </label>
+                    ))}
+                  </div>
                   <FormMessage />
                 </FormItem>
-              )} />
+              )
+            }} />
+            <div className="grid grid-cols-2 gap-3">
+              <FormField control={form.control} name="unitPerBox" render={({ field }) => {
+                const labels = getProductLabels(form.watch("productType"))
+                return (
+                  <FormItem>
+                    <FormLabel>{labels.unit} por {labels.container.slice(0, -1) || labels.container}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="24"
+                        autoComplete="off"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )
+              }} />
               <FormField control={form.control} name="lowStockAlert" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Alerta Stock (und.)</FormLabel>
+                  <FormLabel>Alerta Stock</FormLabel>
                   <FormControl>
                     <Input
                       type="text"
@@ -184,42 +215,6 @@ export function ProductDialog({ companyId, companyName, product }: Props) {
                 </FormItem>
               )} />
             </div>
-            <FormField control={form.control} name="category" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Categoría</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar categoría" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="CONSERVA">Conserva</SelectItem>
-                    <SelectItem value="CHOCOLATE">Chocolate</SelectItem>
-                    <SelectItem value="LECHE">Leche</SelectItem>
-                    <SelectItem value="ARROZ">Arroz</SelectItem>
-                    <SelectItem value="OTRO">Otro</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <FormField control={form.control} name="isSpecial" render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
-                <div>
-                  <FormLabel className="cursor-pointer">Producto especial</FormLabel>
-                  <p className="text-xs text-gray-500">Marcar si no es una conserva estándar</p>
-                </div>
-                <FormControl>
-                  <input
-                    type="checkbox"
-                    checked={field.value}
-                    onChange={field.onChange}
-                    className="h-4 w-4 accent-orange-500"
-                  />
-                </FormControl>
-              </FormItem>
-            )} />
             <div className="flex gap-2 justify-end pt-2">
               {isEdit && (
                 <Button type="button" variant="destructive" size="sm"

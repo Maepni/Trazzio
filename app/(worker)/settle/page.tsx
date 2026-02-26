@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { redirect } from "next/navigation"
 import { SettleForm } from "@/components/worker/settle-form"
-import { getTodayStart, getTodayEnd, serialize } from "@/lib/utils"
+import { serialize } from "@/lib/utils"
 
 export const dynamic = 'force-dynamic'
 
@@ -10,20 +10,27 @@ export default async function SettlePage() {
   const session = await auth()
   if (!session || !session.user.workerId) redirect("/login")
 
-  const todayStart = getTodayStart()
-  const todayEnd = getTodayEnd()
-
-  // customSalePrice es un campo escalar del modelo Assignment (no una relación),
-  // por lo que Prisma lo devuelve automáticamente sin necesidad de incluirlo explícitamente.
-  const pendingAssignments = await prisma.assignment.findMany({
+  const assignments = await prisma.assignment.findMany({
     where: {
       workerId: session.user.workerId,
-      status: "PENDING",
-      date: { gte: todayStart, lte: todayEnd },
+      status: "ACTIVE",
     },
-    include: { product: { include: { company: true } } },
-    orderBy: { date: "asc" },
+    include: {
+      product: { include: { company: true } },
+      dailySales: { orderBy: { date: "asc" } },
+    },
+    orderBy: { startDate: "asc" },
   })
 
-  return <SettleForm assignments={serialize(pendingAssignments)} />
+  const withTotals = assignments.map((a) => {
+    const totalSold = a.dailySales.reduce((sum, d) => sum + d.quantitySold, 0)
+    const totalMerma = a.dailySales.reduce((sum, d) => sum + d.quantityMerma, 0)
+    const remaining = a.quantityAssigned - totalSold - totalMerma
+    const totalDue = totalSold * Number(a.product.salePrice)
+    const totalPaid = a.dailySales.reduce((sum, d) => sum + Number(d.amountPaid), 0)
+    const pendingDebt = Math.max(0, totalDue - totalPaid)
+    return { ...a, totalSold, totalMerma, remaining, totalDue, totalPaid, pendingDebt }
+  })
+
+  return <SettleForm assignments={serialize(withTotals)} />
 }

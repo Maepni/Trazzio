@@ -10,12 +10,17 @@ export function formatCurrency(amount: number | string | null | undefined): stri
   return `S/ ${num.toFixed(2)}`
 }
 
-export function formatUnitsToBoxes(units: number, unitPerBox: number): string {
+export function formatUnitsToBoxes(
+  units: number,
+  unitPerBox: number,
+  containerShort = "caj.",
+  unitShort = "und."
+): string {
   const boxes = Math.floor(units / unitPerBox)
   const remaining = units % unitPerBox
-  if (boxes === 0) return `${remaining} und.`
-  if (remaining === 0) return `${boxes} caj.`
-  return `${boxes} caj. + ${remaining} und.`
+  if (boxes === 0) return `${remaining} ${unitShort}`
+  if (remaining === 0) return `${boxes} ${containerShort}`
+  return `${boxes} ${containerShort} + ${remaining} ${unitShort}`
 }
 
 export function formatDate(date: Date | string): string {

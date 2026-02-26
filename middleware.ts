@@ -32,7 +32,9 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/home", nextUrl))
   }
 
-  if (isLoggedIn && isWorkerRoute && session?.user?.role !== "WORKER") {
+  // Admin con workerId también puede acceder a rutas de trabajador (admin-worker)
+  const isAdminWorker = session?.user?.role === "ADMIN" && !!session?.user?.workerId
+  if (isLoggedIn && isWorkerRoute && session?.user?.role !== "WORKER" && !isAdminWorker) {
     return NextResponse.redirect(new URL("/dashboard", nextUrl))
   }
 

@@ -10,11 +10,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2, Mail, Lock } from "lucide-react"
+import { Loader2, User, Lock } from "lucide-react"
 import { toast } from "sonner"
 
 const schema = z.object({
-  email: z.string().email("Email inválido"),
+  username: z.string().min(1, "Usuario requerido"),
   password: z.string().min(6, "Mínimo 6 caracteres"),
 })
 
@@ -34,7 +34,7 @@ export function LoginForm() {
     setLoading(true)
     try {
       const result = await signIn("credentials", {
-        email: data.email,
+        username: data.username,
         password: data.password,
         redirect: false,
       })
@@ -60,21 +60,22 @@ export function LoginForm() {
       <CardContent>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="email" className="text-sm font-medium">
-              Correo electrónico
+            <Label htmlFor="username" className="text-sm font-medium">
+              Usuario
             </Label>
             <div className="relative">
-              <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <User className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                id="email"
-                type="email"
-                placeholder="correo@ejemplo.com"
+                id="username"
+                type="text"
+                placeholder="nombre_usuario"
+                autoComplete="username"
                 className="pl-9"
-                {...register("email")}
+                {...register("username")}
               />
             </div>
-            {errors.email && (
-              <p className="text-xs text-red-500">{errors.email.message}</p>
+            {errors.username && (
+              <p className="text-xs text-red-500">{errors.username.message}</p>
             )}
           </div>
 

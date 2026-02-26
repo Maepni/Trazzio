@@ -10,7 +10,6 @@ import {
   Users,
   ClipboardList,
   CheckSquare,
-  BarChart3,
 } from "lucide-react"
 
 const navItems = [
@@ -20,7 +19,6 @@ const navItems = [
   { href: "/workers", label: "Trabajadores", icon: Users },
   { href: "/assignments", label: "Asignaciones", icon: ClipboardList },
   { href: "/settlements", label: "Rendiciones", icon: CheckSquare },
-  { href: "/reports", label: "Reportes", icon: BarChart3 },
 ]
 
 export function AdminSidebar() {

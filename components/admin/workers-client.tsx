@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
-import { Plus, Pencil, Trash2, Users, Phone, Mail, DollarSign } from "lucide-react"
+import { Plus, Pencil, Trash2, Users, Phone, User, DollarSign } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 
 const createSchema = z.object({
@@ -21,7 +21,7 @@ const createSchema = z.object({
   phone: z.string().optional(),
   commission: z.preprocess((v) => Number(v), z.number().min(0)),
   commissionType: z.enum(["PERCENTAGE", "FIXED"]),
-  email: z.string().email("Email inválido"),
+  username: z.string().min(3, "Mínimo 3 caracteres").regex(/^\S+$/, "Sin espacios"),
   password: z.string().min(6, "Mínimo 6 caracteres"),
 })
 
@@ -235,8 +235,8 @@ export function WorkersClient({ initialWorkers }: { initialWorkers: any[] }) {
                   <FormField control={createForm.control} name="commission" render={({ field }) => (
                     <FormItem><FormLabel>Comisión</FormLabel><FormControl><Input type="number" step="0.01" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
-                  <FormField control={createForm.control} name="email" render={({ field }) => (
-                    <FormItem><FormLabel>Email (acceso)</FormLabel><FormControl><Input type="email" {...field} /></FormControl><FormMessage /></FormItem>
+                  <FormField control={createForm.control} name="username" render={({ field }) => (
+                    <FormItem><FormLabel>Usuario (acceso)</FormLabel><FormControl><Input type="text" autoComplete="off" placeholder="ej: juan_perez" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
                   <FormField control={createForm.control} name="password" render={({ field }) => (
                     <FormItem><FormLabel>Contraseña</FormLabel><FormControl><Input type="password" {...field} /></FormControl><FormMessage /></FormItem>
@@ -317,7 +317,7 @@ export function WorkersClient({ initialWorkers }: { initialWorkers: any[] }) {
                     </div>
                   )}
                   <div className="flex items-center gap-1.5">
-                    <Mail className="h-3 w-3" />{w.user?.email}
+                    <User className="h-3 w-3" />{w.user?.username}
                   </div>
                   <div className="text-gray-400 pt-0.5">
                     {w._count?.assignments ?? 0} asignaciones totales

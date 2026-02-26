@@ -24,12 +24,10 @@ model Product {
   unitPerBox    Int
   lowStockAlert Int             @default(10)
   stock         Int             @default(0)
-  category      ProductCategory @default(CONSERVA)
-  isSpecial     Boolean         @default(false)
+  productType   ProductType     @default(ESTANDAR)
   createdAt     DateTime        @default(now())
 
   assignments  Assignment[]
-  mermaItems   MermaItem[]
   stockEntries StockEntry[]
 }
 
@@ -53,42 +51,24 @@ model Assignment {
   worker    Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
   productId String
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  date      DateTime @default(now())
+  startDate DateTime @default(now())
 
   quantityAssigned Int
-  quantityReturned Int?
-  quantitySold     Int?
-  customSalePrice  Decimal? @db.Decimal(10, 2)
 
-  status AssignmentStatus @default(PENDING)
+  status AssignmentStatus @default(ACTIVE)
 
-  mermaItems MermaItem[]
-  settlement Settlement?
+  dailySales DailySale[]
 }
 
-model Settlement {
-  id           String     @id @default(cuid())
-  assignmentId String     @unique
-  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  settledAt    DateTime   @default(now())
-
-  totalSold  Int
-  totalMerma Int
-  amountDue  Decimal @db.Decimal(10, 2)
-  amountPaid Decimal @db.Decimal(10, 2)
-  difference Decimal @db.Decimal(10, 2)
-  notes      String?
-}
-
-model MermaItem {
-  id           String     @id @default(cuid())
-  assignmentId String
-  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  productId    String
-  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
-  quantity     Int
-  reason       String?
-  createdAt    DateTime   @default(now())
+model DailySale {
+  id            String     @id @default(cuid())
+  assignmentId  String
+  assignment    Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  date          DateTime   @default(now())
+  quantitySold  Int
+  quantityMerma Int        @default(0)
+  amountPaid    Decimal    @default(0) @db.Decimal(10, 2)
+  notes         String?
 }
 
 model StockEntry {
@@ -113,7 +93,7 @@ model WorkerPayment {
 
 model User {
   id        String   @id @default(cuid())
-  email     String   @unique
+  username  String   @unique
   password  String
   role      Role     @default(WORKER)
   worker    Worker?
@@ -126,8 +106,8 @@ enum Role {
 }
 
 enum AssignmentStatus {
-  PENDING
-  SETTLED
+  ACTIVE
+  CLOSED
 }
 
 enum CommissionType {
@@ -135,10 +115,8 @@ enum CommissionType {
   FIXED
 }
 
-enum ProductCategory {
-  CONSERVA
-  CHOCOLATE
+enum ProductType {
+  ESTANDAR
   LECHE
   ARROZ
-  OTRO
 }

@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, Building2 } from "lucide-react"
 import { formatCurrency, formatUnitsToBoxes } from "@/lib/utils"
 import { ProductDialog } from "@/components/admin/product-dialog"
+import { getProductLabels } from "@/lib/product-types"
 
 const companySchema = z.object({ name: z.string().min(1, "Nombre requerido") })
 type CompanyForm = z.infer<typeof companySchema>
@@ -217,19 +218,11 @@ export function CompaniesClient({ initialCompanies }: { initialCompanies: any[] 
                             <TableCell className="font-medium">
                               <div className="flex items-center gap-1 flex-wrap">
                                 <span>{product.name}</span>
-                                {product.isSpecial && (
-                                  <Badge className="text-xs bg-orange-100 text-orange-700 border border-orange-200 hover:bg-orange-100">
-                                    Especial
+                                {product.productType && product.productType !== "ESTANDAR" && (
+                                  <Badge variant="outline" className="text-xs text-[#1e3a5f] border-[#1e3a5f]/30">
+                                    {getProductLabels(product.productType).container}
                                   </Badge>
                                 )}
-                                <Badge variant="outline" className="text-xs text-gray-500">
-                                  {product.category === "CONSERVA" ? "Conserva"
-                                   : product.category === "CHOCOLATE" ? "Chocolate"
-                                   : product.category === "LECHE" ? "Leche"
-                                   : product.category === "ARROZ" ? "Arroz"
-                                   : product.category === "OTRO" ? "Otro"
-                                   : "Conserva"}
-                                </Badge>
                               </div>
                             </TableCell>
                             <TableCell className="text-right text-gray-600">
@@ -243,7 +236,7 @@ export function CompaniesClient({ initialCompanies }: { initialCompanies: any[] 
                                 variant={product.stock <= product.lowStockAlert ? "destructive" : "secondary"}
                                 className="text-xs"
                               >
-                                {formatUnitsToBoxes(product.stock, product.unitPerBox)}
+                                {formatUnitsToBoxes(product.stock, product.unitPerBox, getProductLabels(product.productType).containerShort, getProductLabels(product.productType).unitShort)}
                               </Badge>
                             </TableCell>
                             <TableCell className="text-right text-gray-500 text-xs">

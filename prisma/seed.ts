@@ -9,11 +9,11 @@ async function main() {
   // Admin
   const hashedAdmin = await bcrypt.hash("admin123", 10)
   const admin = await prisma.user.upsert({
-    where: { email: "admin@trazzio.com" },
+    where: { username: "admin" },
     update: {},
-    create: { email: "admin@trazzio.com", password: hashedAdmin, role: "ADMIN" },
+    create: { username: "admin", password: hashedAdmin, role: "ADMIN" },
   })
-  console.log("✅ Admin:", admin.email, "/ admin123")
+  console.log("✅ Admin:", admin.username, "/ admin123")
 
   // Empresas
   const company1 = await prisma.company.upsert({
@@ -41,8 +41,7 @@ async function main() {
       unitPerBox: 48,
       lowStockAlert: 50,
       stock: 200,
-      category: "CONSERVA",
-      isSpecial: false,
+      productType: "ESTANDAR",
     },
   })
   await prisma.product.upsert({
@@ -57,8 +56,7 @@ async function main() {
       unitPerBox: 24,
       lowStockAlert: 30,
       stock: 120,
-      category: "CONSERVA",
-      isSpecial: false,
+      productType: "ESTANDAR",
     },
   })
   await prisma.product.upsert({
@@ -73,8 +71,7 @@ async function main() {
       unitPerBox: 24,
       lowStockAlert: 25,
       stock: 80,
-      category: "CONSERVA",
-      isSpecial: false,
+      productType: "ESTANDAR",
     },
   })
   await prisma.product.upsert({
@@ -89,8 +86,7 @@ async function main() {
       unitPerBox: 12,
       lowStockAlert: 10,
       stock: 60,
-      category: "CHOCOLATE",
-      isSpecial: true,
+      productType: "ESTANDAR",
     },
   })
   await prisma.product.upsert({
@@ -105,8 +101,7 @@ async function main() {
       unitPerBox: 24,
       lowStockAlert: 20,
       stock: 144,
-      category: "LECHE",
-      isSpecial: true,
+      productType: "LECHE",
     },
   })
   console.log("✅ Productos creados")
@@ -114,9 +109,9 @@ async function main() {
   // Trabajador demo
   const workerPassword = await bcrypt.hash("worker123", 10)
   const workerUser = await prisma.user.upsert({
-    where: { email: "trabajador@trazzio.com" },
+    where: { username: "trabajador" },
     update: {},
-    create: { email: "trabajador@trazzio.com", password: workerPassword, role: "WORKER" },
+    create: { username: "trabajador", password: workerPassword, role: "WORKER" },
   })
   await prisma.worker.upsert({
     where: { userId: workerUser.id },
@@ -129,11 +124,11 @@ async function main() {
       userId: workerUser.id,
     },
   })
-  console.log("✅ Trabajador demo:", workerUser.email, "/ worker123")
+  console.log("✅ Trabajador demo:", workerUser.username, "/ worker123")
 
   console.log("\n🎉 Seed completado!")
-  console.log("   Admin:      admin@trazzio.com    / admin123")
-  console.log("   Trabajador: trabajador@trazzio.com / worker123")
+  console.log("   Admin:      admin      / admin123")
+  console.log("   Trabajador: trabajador / worker123")
 }
 
 main()

@@ -21,7 +21,6 @@ const pageTitles: Record<string, string> = {
   "/workers": "Trabajadores",
   "/assignments": "Asignaciones del Día",
   "/settlements": "Rendiciones",
-  "/reports": "Reportes",
 }
 
 export function AdminHeader() {
@@ -45,13 +44,13 @@ export function AdminHeader() {
               </AvatarFallback>
             </Avatar>
             <span className="hidden sm:block text-sm text-gray-700">
-              {session?.user?.email?.split("@")[0]}
+              {session?.user?.username}
             </span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
           <DropdownMenuItem className="text-gray-500 text-xs" disabled>
-            {session?.user?.email}
+            {session?.user?.username}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

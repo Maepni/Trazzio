@@ -6,12 +6,15 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, Trash2, ClipboardList, User } from "lucide-react"
-import { formatCurrency, formatUnitsToBoxes, formatDateTime } from "@/lib/utils"
+import { Plus, ClipboardList, User, History, XCircle, AlertTriangle } from "lucide-react"
+import { formatCurrency, formatUnitsToBoxes, formatDate, formatDateTime } from "@/lib/utils"
+import { getProductLabels } from "@/lib/product-types"
+import { CompanyBadge } from "@/components/shared/company-badge"
+import { buildVisualBatches } from "@/lib/batch-grouping"
 
 export function AssignmentsClient({ initialWorkers, initialProducts, initialAssignments }: {
   initialWorkers: any[]; initialProducts: any[]; initialAssignments: any[]
@@ -20,7 +23,13 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
   const [open, setOpen] = useState(false)
   const [workerId, setWorkerId] = useState("")
   const [selectedCompanyId, setSelectedCompanyId] = useState("")
-  const [productQtys, setProductQtys] = useState<Record<string, { boxes: number; units: number; customSalePrice: string }>>({})
+  const [productQtys, setProductQtys] = useState<Record<string, { boxes: number; units: number }>>({})
+
+  // Sheet historial
+  const [historialAssignment, setHistorialAssignment] = useState<any | null>(null)
+
+  // Dialog cierre
+  const [closingAssignment, setClosingAssignment] = useState<any | null>(null)
 
   const { data: workers = initialWorkers } = useQuery({
     queryKey: ["workers"],
@@ -33,14 +42,24 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
     initialData: initialProducts,
   })
   const { data: assignments = initialAssignments } = useQuery({
-    queryKey: ["assignments-today"],
+    queryKey: ["assignments-active"],
     queryFn: async () => { const r = await fetch("/api/assignments"); return r.json() },
     initialData: initialAssignments,
     refetchInterval: 30000,
   })
 
-  const mutation = useMutation({
-    mutationFn: async (data: { workerId: string; items: { productId: string; quantityAssigned: number; customSalePrice: number | null }[] }) => {
+  // Historial diario de una asignación
+  const { data: dailySales = [] } = useQuery({
+    queryKey: ["daily-sales", historialAssignment?.id],
+    queryFn: async () => {
+      const r = await fetch(`/api/daily-sales?assignmentId=${historialAssignment.id}`)
+      return r.json()
+    },
+    enabled: !!historialAssignment,
+  })
+
+  const createMutation = useMutation({
+    mutationFn: async (data: { workerId: string; items: { productId: string; quantityAssigned: number }[] }) => {
       const res = await fetch("/api/assignments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -50,7 +69,7 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
       return res.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["assignments-today"] })
+      queryClient.invalidateQueries({ queryKey: ["assignments-active"] })
       queryClient.invalidateQueries({ queryKey: ["products-available"] })
       toast.success("Asignación creada")
       setOpen(false)
@@ -59,15 +78,20 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
     onError: (e: any) => toast.error(e.message),
   })
 
-  const deleteMutation = useMutation({
+  const closeMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/assignments/${id}`, { method: "DELETE" })
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Error") }
+      return res.json()
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["assignments-today"] })
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["assignments-active"] })
       queryClient.invalidateQueries({ queryKey: ["products-available"] })
-      toast.success("Asignación eliminada y stock restaurado")
+      const msg = data.stockRestored > 0
+        ? `Asignación cerrada. Stock restaurado: +${data.stockRestored}u de ${data.productName}`
+        : "Asignación cerrada. Sin sobrante para restaurar."
+      toast.success(msg)
+      setClosingAssignment(null)
     },
     onError: (e: any) => toast.error(e.message),
   })
@@ -81,38 +105,42 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
   const companies = Array.from(new Map(products.map((p: any) => [p.company.id, p.company])).values()) as any[]
   const companyProducts = products.filter((p: any) => p.company.id === selectedCompanyId)
 
-  const selectedItems: { name: string; qty: number; salePrice: number; unitPerBox: number }[] = companyProducts
+  const selectedItems = companyProducts
     .filter((p: any) => { const q = productQtys[p.id]; return q && (q.boxes > 0 || q.units > 0) })
     .map((p: any) => {
-      const q = productQtys[p.id] || { boxes: 0, units: 0, customSalePrice: "" }
+      const q = productQtys[p.id] || { boxes: 0, units: 0 }
       const qty = q.boxes * p.unitPerBox + q.units
-      const effectivePrice = q.customSalePrice !== "" ? Number(q.customSalePrice) : Number(p.salePrice)
-      return { name: p.name as string, qty, salePrice: effectivePrice, unitPerBox: p.unitPerBox as number }
+      return { name: p.name as string, qty, salePrice: Number(p.salePrice), unitPerBox: p.unitPerBox as number }
     })
 
   const handleSubmit = () => {
     if (!workerId) { toast.error("Selecciona un trabajador"); return }
     if (!selectedCompanyId) { toast.error("Selecciona una empresa"); return }
     const items = companyProducts
-      .filter((p: any) => {
-        const q = productQtys[p.id]
-        return q && (q.boxes > 0 || q.units > 0)
-      })
+      .filter((p: any) => { const q = productQtys[p.id]; return q && (q.boxes > 0 || q.units > 0) })
       .map((p: any) => {
-        const q = productQtys[p.id] || { boxes: 0, units: 0, customSalePrice: "" }
-        return {
-          productId: p.id,
-          quantityAssigned: q.boxes * p.unitPerBox + q.units,
-          customSalePrice: q.customSalePrice !== "" ? Number(q.customSalePrice) : null,
-        }
+        const q = productQtys[p.id] || { boxes: 0, units: 0 }
+        return { productId: p.id, quantityAssigned: q.boxes * p.unitPerBox + q.units }
       })
     if (items.length === 0) { toast.error("Ingresa al menos una cantidad"); return }
-    mutation.mutate({ workerId, items })
+    createMutation.mutate({ workerId, items })
   }
 
+  // Agrupar asignaciones activas por trabajador
   const groupedByWorker = assignments.reduce((acc: any, a: any) => {
-    if (!acc[a.workerId]) acc[a.workerId] = { worker: a.worker, items: [] }
+    if (!acc[a.workerId]) {
+      acc[a.workerId] = {
+        worker: a.worker,
+        items: [],
+        totalDue: 0,
+        totalPaid: 0,
+        pendingDebt: 0,
+      }
+    }
     acc[a.workerId].items.push(a)
+    acc[a.workerId].totalDue += a.totalDue ?? 0
+    acc[a.workerId].totalPaid += a.totalPaid ?? 0
+    acc[a.workerId].pendingDebt += a.pendingDebt ?? 0
     return acc
   }, {})
 
@@ -120,8 +148,8 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#1e3a5f]">Asignaciones del Día</h1>
-          <p className="text-gray-500 text-sm">{assignments.length} asignaciones hoy</p>
+          <h1 className="text-2xl font-bold text-[#1e3a5f]">Asignaciones Activas</h1>
+          <p className="text-gray-500 text-sm">{assignments.length} asignación(es) activa(s)</p>
         </div>
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm() }}>
           <DialogTrigger asChild>
@@ -129,10 +157,9 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
               <Plus className="h-4 w-4 mr-2" /> Nueva Asignación
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <DialogHeader><DialogTitle>Nueva Asignación</DialogTitle></DialogHeader>
-            <div className="space-y-4">
-              {/* Trabajador */}
+          <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0 gap-0">
+            <DialogHeader className="px-6 pt-6 pb-2"><DialogTitle>Nueva Asignación</DialogTitle></DialogHeader>
+            <div className="flex-1 overflow-y-auto px-6 pb-2 space-y-4">
               <div>
                 <label className="text-sm font-medium leading-none mb-1.5 block">Trabajador</label>
                 <Select value={workerId} onValueChange={setWorkerId}>
@@ -144,8 +171,6 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
                   </SelectContent>
                 </Select>
               </div>
-
-              {/* Empresa */}
               <div>
                 <label className="text-sm font-medium leading-none mb-1.5 block">Empresa / Marca</label>
                 <Select value={selectedCompanyId} onValueChange={(v) => { setSelectedCompanyId(v); setProductQtys({}) }}>
@@ -157,28 +182,28 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
                   </SelectContent>
                 </Select>
               </div>
-
               {selectedCompanyId && companyProducts.length === 0 && (
-                <p className="text-sm text-gray-400 text-center py-2">No hay productos disponibles para esta empresa</p>
+                <p className="text-sm text-gray-400 text-center py-2">No hay productos con stock disponible</p>
               )}
-
-              {/* Productos con cajas + unidades */}
               {companyProducts.length > 0 && (
                 <div className="space-y-2">
                   <label className="text-sm font-medium leading-none">Cantidades por producto</label>
                   <div className="border border-gray-100 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
                     {companyProducts.map((p: any, idx: number) => {
-                      const q = productQtys[p.id] || { boxes: 0, units: 0, customSalePrice: "" }
-                      const total = q.boxes * p.unitPerBox + q.units
+                      const q = productQtys[p.id] || { boxes: 0, units: 0 }
                       const maxBoxes = Math.floor(p.stock / p.unitPerBox)
                       const maxUnits = p.stock - q.boxes * p.unitPerBox
+                      const total = q.boxes * p.unitPerBox + q.units
                       return (
                         <div key={p.id} className={`px-3 py-2.5 ${idx > 0 ? "border-t border-gray-100" : ""}`}>
                           <div className="flex items-center justify-between mb-1.5">
                             <div>
                               <p className="text-sm font-medium text-gray-800">{p.name}</p>
                               <p className="text-xs text-gray-400">
-                                Disponible: {formatUnitsToBoxes(p.stock, p.unitPerBox)} · {p.unitPerBox} und/caja
+                                {(() => {
+                                  const l = getProductLabels(p.productType)
+                                  return `Disponible: ${formatUnitsToBoxes(p.stock, p.unitPerBox, l.containerShort, l.unitShort)} · ${p.unitPerBox} ${l.containerPer}`
+                                })()}
                               </p>
                             </div>
                             {total > 0 && (
@@ -187,91 +212,44 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
                               </span>
                             )}
                           </div>
-                          {p.unitPerBox > 1 ? (
-                            <div className="flex items-end gap-2">
-                              <div className="flex-1">
-                                <p className="text-xs text-gray-400 mb-0.5">Cajas</p>
-                                <Input
-                                  type="number"
-                                  min={0}
-                                  max={maxBoxes}
-                                  value={q.boxes || ""}
-                                  placeholder="0"
-                                  className="h-8 text-sm"
-                                  onChange={(e) => {
-                                    const boxes = Math.max(0, Math.min(maxBoxes, Number(e.target.value) || 0))
-                                    const newMaxUnits = p.stock - boxes * p.unitPerBox
-                                    setProductQtys(prev => ({
-                                      ...prev,
-                                      [p.id]: { ...q, boxes, units: Math.min(q.units, newMaxUnits) },
-                                    }))
-                                  }}
-                                />
+                          {(() => {
+                            const l = getProductLabels(p.productType)
+                            return p.unitPerBox > 1 ? (
+                              <div className="flex items-end gap-2">
+                                <div className="flex-1">
+                                  <p className="text-xs text-gray-400 mb-0.5">{l.container}</p>
+                                  <Input type="number" min={0} max={maxBoxes} value={q.boxes || ""} placeholder="0" className="h-8 text-sm"
+                                    onChange={(e) => {
+                                      const boxes = Math.max(0, Math.min(maxBoxes, Number(e.target.value) || 0))
+                                      const newMaxUnits = p.stock - boxes * p.unitPerBox
+                                      setProductQtys(prev => ({ ...prev, [p.id]: { ...q, boxes, units: Math.min(q.units, newMaxUnits) } }))
+                                    }} />
+                                </div>
+                                <span className="text-gray-400 pb-1">+</span>
+                                <div className="flex-1">
+                                  <p className="text-xs text-gray-400 mb-0.5">{l.unit}</p>
+                                  <Input type="number" min={0} max={maxUnits} value={q.units || ""} placeholder="0" className="h-8 text-sm"
+                                    onChange={(e) => setProductQtys(prev => ({ ...prev, [p.id]: { ...q, units: Math.max(0, Math.min(maxUnits, Number(e.target.value) || 0)) } }))} />
+                                </div>
                               </div>
-                              <span className="text-gray-400 pb-1">+</span>
-                              <div className="flex-1">
-                                <p className="text-xs text-gray-400 mb-0.5">Unidades</p>
-                                <Input
-                                  type="number"
-                                  min={0}
-                                  max={maxUnits}
-                                  value={q.units || ""}
-                                  placeholder="0"
-                                  className="h-8 text-sm"
-                                  onChange={(e) => setProductQtys(prev => ({
-                                    ...prev,
-                                    [p.id]: { ...q, units: Math.max(0, Math.min(maxUnits, Number(e.target.value) || 0)) },
-                                  }))}
-                                />
+                            ) : (
+                              <div>
+                                <p className="text-xs text-gray-400 mb-0.5">{l.unit}</p>
+                                <Input type="number" min={0} max={p.stock} value={q.units || ""} placeholder="0" className="h-8 text-sm"
+                                  onChange={(e) => setProductQtys(prev => ({ ...prev, [p.id]: { ...q, boxes: 0, units: Math.max(0, Math.min(p.stock, Number(e.target.value) || 0)) } }))} />
                               </div>
-                            </div>
-                          ) : (
-                            <div>
-                              <p className="text-xs text-gray-400 mb-0.5">Unidades</p>
-                              <Input
-                                type="number"
-                                min={0}
-                                max={p.stock}
-                                value={q.units || ""}
-                                placeholder="0"
-                                className="h-8 text-sm"
-                                onChange={(e) => setProductQtys(prev => ({
-                                  ...prev,
-                                  [p.id]: { ...q, boxes: 0, units: Math.max(0, Math.min(p.stock, Number(e.target.value) || 0)) },
-                                }))}
-                              />
-                            </div>
-                          )}
-                          <div className="mt-2">
-                            <p className="text-xs text-gray-500 mb-1">
-                              Precio venta personalizado
-                              <span className="text-gray-400 ml-1">(vacío = S/ {formatCurrency(p.salePrice)})</span>
-                            </p>
-                            <Input
-                              type="text"
-                              inputMode="decimal"
-                              autoComplete="off"
-                              placeholder={`S/ ${formatCurrency(p.salePrice)}`}
-                              value={q.customSalePrice}
-                              onChange={(e) => setProductQtys(prev => ({
-                                ...prev,
-                                [p.id]: { ...q, customSalePrice: e.target.value },
-                              }))}
-                              className="h-8 text-sm"
-                            />
-                          </div>
+                            )
+                          })()}
                         </div>
                       )
                     })}
                   </div>
                 </div>
               )}
-
-              {/* Resumen */}
               {selectedItems.length > 0 && (
                 <div className="bg-gray-50 rounded-lg p-3 text-sm">
                   <p className="text-gray-500 font-medium mb-1">Resumen:</p>
-                  {selectedItems.map((item, idx) => (
+                  {selectedItems.map((item: { name: string; qty: number; salePrice: number; unitPerBox: number }, idx: number) => (
                     <div key={idx} className="flex justify-between text-xs">
                       <span>{item.name} — {formatUnitsToBoxes(item.qty, item.unitPerBox)}</span>
                       <span className="font-medium">{formatCurrency(item.qty * item.salePrice)}</span>
@@ -279,99 +257,264 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
                   ))}
                 </div>
               )}
-
-              <div className="flex gap-2 justify-end">
-                <Button type="button" variant="outline" onClick={() => { setOpen(false); resetForm() }}>Cancelar</Button>
-                <Button
-                  type="button"
-                  className="bg-[#1e3a5f] hover:bg-[#2d5a9e]"
-                  disabled={mutation.isPending}
-                  onClick={handleSubmit}
-                >
-                  {mutation.isPending ? "Asignando..." : "Asignar"}
-                </Button>
-              </div>
+            </div>
+            <div className="border-t px-6 py-4 flex gap-2 justify-end bg-background">
+              <Button type="button" variant="outline" onClick={() => { setOpen(false); resetForm() }}>Cancelar</Button>
+              <Button type="button" className="bg-[#1e3a5f] hover:bg-[#2d5a9e]" disabled={createMutation.isPending} onClick={handleSubmit}>
+                {createMutation.isPending ? "Asignando..." : "Asignar"}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
       </div>
 
+      {/* Lista de asignaciones activas agrupadas por trabajador */}
       {Object.keys(groupedByWorker).length === 0 ? (
         <Card className="border-0 shadow-sm">
           <CardContent className="flex flex-col items-center py-12 text-gray-400">
             <ClipboardList className="h-10 w-10 mb-3 opacity-30" />
-            <p className="text-sm">Sin asignaciones hoy</p>
+            <p className="text-sm">Sin asignaciones activas</p>
           </CardContent>
         </Card>
       ) : (
         Object.values(groupedByWorker).map((group: any) => (
-          <Card key={group.worker.id} className="border-0 shadow-sm">
+          <Card key={group.worker.id} className="border-0 shadow-sm overflow-hidden">
             <div className="flex items-center gap-3 px-5 py-3 border-b bg-gray-50">
-              <div className="w-8 h-8 rounded-full bg-[#1e3a5f]/10 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-full bg-[#1e3a5f]/10 flex items-center justify-center flex-shrink-0">
                 <User className="h-4 w-4 text-[#1e3a5f]" />
               </div>
-              <div>
+              <div className="flex-1">
                 <p className="font-semibold text-gray-900">{group.worker.name}</p>
-                <p className="text-xs text-gray-400">{group.items.length} productos asignados</p>
+                <p className="text-xs text-gray-400">{group.items.length} producto(s) activo(s)</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-gray-400">Saldo pendiente</p>
+                <p className={`text-sm font-bold ${group.pendingDebt > 0 ? "text-orange-600" : "text-green-600"}`}>
+                  {formatCurrency(group.pendingDebt)}
+                </p>
               </div>
             </div>
+
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Producto</TableHead>
                   <TableHead className="text-right">Asignado</TableHead>
-                  <TableHead className="text-right">Unidades</TableHead>
-                  <TableHead className="text-right">Valor Venta</TableHead>
-                  <TableHead className="text-center">Estado</TableHead>
-                  <TableHead className="text-right">Hora</TableHead>
+                  <TableHead className="text-right">Vendido</TableHead>
+                  <TableHead className="text-right">Merma</TableHead>
+                  <TableHead className="text-right">Restante</TableHead>
+                  <TableHead className="text-right">Deuda</TableHead>
+                  <TableHead className="text-right">Pagado</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {group.items.map((a: any) => (
+                {(() => {
+                  const withBatch = buildVisualBatches(
+                    group.items.map((a: any) => ({ ...a, createdAt: a.startDate }))
+                  )
+                  return withBatch.map((a: any) => (
                   <TableRow key={a.id}>
                     <TableCell>
                       <div>
-                        <p className="font-medium">{a.product.name}</p>
-                        <p className="text-xs text-gray-400">{a.product.company.name}</p>
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <p className="font-medium text-sm">{a.product.name}</p>
+                          <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded font-mono">{a.label}</span>
+                        </div>
+                        <CompanyBadge companyName={a.product.company.name} colorKey={a.product.company.id} />
                       </div>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right text-sm">
                       {formatUnitsToBoxes(a.quantityAssigned, a.product.unitPerBox)}
                     </TableCell>
+                    <TableCell className="text-right text-sm text-green-700 font-medium">
+                      {a.totalSold ?? 0}u
+                    </TableCell>
+                    <TableCell className="text-right text-sm text-red-600">
+                      {a.totalMerma ?? 0}u
+                    </TableCell>
+                    <TableCell className="text-right text-sm font-semibold text-blue-700">
+                      {a.remaining ?? a.quantityAssigned}u
+                    </TableCell>
+                    <TableCell className="text-right text-sm">
+                      {formatCurrency(a.totalDue ?? 0)}
+                    </TableCell>
                     <TableCell className="text-right text-sm text-gray-500">
-                      {a.quantityAssigned} und.
-                    </TableCell>
-                    <TableCell className="text-right text-gray-600">
-                      {formatCurrency(a.quantityAssigned * Number(a.customSalePrice ?? a.product.salePrice))}
-                      {a.customSalePrice != null && (
-                        <span className="ml-1 text-xs text-orange-500">(especial)</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant={a.status === "SETTLED" ? "default" : "secondary"}
-                        className={a.status === "SETTLED" ? "bg-green-100 text-green-700" : "bg-orange-50 text-orange-600"}>
-                        {a.status === "SETTLED" ? "Rendido" : "Pendiente"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right text-xs text-gray-400">
-                      {formatDateTime(a.date)}
+                      {formatCurrency(a.totalPaid ?? 0)}
                     </TableCell>
                     <TableCell className="text-right">
-                      {a.status === "PENDING" && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600"
-                          onClick={() => { if (confirm("¿Eliminar asignación?")) deleteMutation.mutate(a.id) }}>
-                          <Trash2 className="h-3.5 w-3.5" />
+                      <div className="flex gap-1 justify-end">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-gray-400 hover:text-[#1e3a5f]"
+                          title="Ver historial"
+                          onClick={() => setHistorialAssignment(a)}
+                        >
+                          <History className="h-3.5 w-3.5" />
                         </Button>
-                      )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-red-400 hover:text-red-600"
+                          title="Cerrar asignación"
+                          onClick={() => setClosingAssignment(a)}
+                        >
+                          <XCircle className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  ))
+                })()}
               </TableBody>
             </Table>
+
+            {/* Footer totales del trabajador */}
+            <div className="px-5 py-3 border-t bg-gray-50/50 flex justify-end gap-6 text-sm">
+              <span className="text-gray-500">
+                Total cobrado: <strong>{formatCurrency(group.totalDue)}</strong>
+              </span>
+              <span className="text-gray-500">
+                Total pagado: <strong>{formatCurrency(group.totalPaid)}</strong>
+              </span>
+              <span className={group.pendingDebt > 0 ? "text-orange-600 font-semibold" : "text-green-600 font-semibold"}>
+                Pendiente: {formatCurrency(group.pendingDebt)}
+              </span>
+            </div>
           </Card>
         ))
       )}
+
+      {/* Sheet historial diario */}
+      <Sheet open={!!historialAssignment} onOpenChange={(v) => { if (!v) setHistorialAssignment(null) }}>
+        <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+          {historialAssignment && (
+            <>
+              <SheetHeader className="mb-5">
+                <SheetTitle>Historial — {historialAssignment.product?.name}</SheetTitle>
+                <p className="text-sm text-gray-400">
+                  {historialAssignment.worker?.name} · Asignado: {historialAssignment.quantityAssigned}u
+                </p>
+              </SheetHeader>
+
+              <div className="space-y-3 mb-5">
+                <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                  <div className="bg-blue-50 rounded-lg p-2">
+                    <p className="text-blue-500 font-medium">Asignado</p>
+                    <p className="font-bold text-blue-800">{historialAssignment.quantityAssigned}u</p>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-2">
+                    <p className="text-green-500 font-medium">Vendido</p>
+                    <p className="font-bold text-green-800">{historialAssignment.totalSold ?? 0}u</p>
+                  </div>
+                  <div className="bg-red-50 rounded-lg p-2">
+                    <p className="text-red-500 font-medium">Merma</p>
+                    <p className="font-bold text-red-800">{historialAssignment.totalMerma ?? 0}u</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-2">
+                    <p className="text-gray-500 font-medium">Restante</p>
+                    <p className="font-bold text-gray-800">{historialAssignment.remaining ?? historialAssignment.quantityAssigned}u</p>
+                  </div>
+                </div>
+              </div>
+
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">Registros diarios</h3>
+              {dailySales.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-8">Sin registros aún</p>
+              ) : (
+                <div className="border border-gray-100 rounded-xl overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-gray-50">
+                        <TableHead className="text-xs">Fecha</TableHead>
+                        <TableHead className="text-right text-xs">Vendido</TableHead>
+                        <TableHead className="text-right text-xs">Merma</TableHead>
+                        <TableHead className="text-right text-xs">Pagó</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {dailySales.map((d: any) => (
+                        <TableRow key={d.id}>
+                          <TableCell className="text-sm text-gray-600">{formatDate(new Date(d.date))}</TableCell>
+                          <TableCell className="text-right text-sm text-green-700 font-medium">{d.quantitySold}u</TableCell>
+                          <TableCell className="text-right text-sm text-red-500">{d.quantityMerma}u</TableCell>
+                          <TableCell className="text-right text-sm font-medium">{formatCurrency(Number(d.amountPaid))}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              <div className="mt-4 bg-gray-50 rounded-xl p-4 space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Total a cobrar:</span>
+                  <span className="font-bold">{formatCurrency(historialAssignment.totalDue ?? 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Total pagado:</span>
+                  <span className="font-semibold">{formatCurrency(historialAssignment.totalPaid ?? 0)}</span>
+                </div>
+                <div className="flex justify-between border-t border-gray-200 pt-1.5">
+                  <span className="font-semibold">Saldo pendiente:</span>
+                  <span className={`font-bold ${(historialAssignment.pendingDebt ?? 0) > 0 ? "text-orange-600" : "text-green-600"}`}>
+                    {formatCurrency(historialAssignment.pendingDebt ?? 0)}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Dialog confirmar cierre */}
+      <Dialog open={!!closingAssignment} onOpenChange={(v) => { if (!v) setClosingAssignment(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Cerrar asignación</DialogTitle>
+          </DialogHeader>
+          {closingAssignment && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                ¿Cerrar la asignación de <strong>{closingAssignment.product?.name}</strong> para{" "}
+                <strong>{closingAssignment.worker?.name}</strong>?
+              </p>
+
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-1.5 text-sm">
+                <p className="font-semibold text-blue-800 mb-1">Se devolverá al stock:</p>
+                <div className="flex justify-between">
+                  <span className="text-blue-700">{closingAssignment.product?.name}:</span>
+                  <span className="font-bold text-blue-900">+{closingAssignment.remaining ?? 0}u</span>
+                </div>
+              </div>
+
+              {(closingAssignment.pendingDebt ?? 0) > 0 && (
+                <div className="flex items-start gap-2 bg-orange-50 border border-orange-100 rounded-xl p-3 text-sm">
+                  <AlertTriangle className="h-4 w-4 text-orange-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-orange-700">
+                    Saldo pendiente de{" "}
+                    <strong>{formatCurrency(closingAssignment.pendingDebt)}</strong> quedará registrado.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-2 justify-end pt-1">
+                <Button variant="outline" onClick={() => setClosingAssignment(null)}>
+                  Cancelar
+                </Button>
+                <Button
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                  disabled={closeMutation.isPending}
+                  onClick={() => closeMutation.mutate(closingAssignment.id)}
+                >
+                  {closeMutation.isPending ? "Cerrando..." : "Confirmar cierre"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

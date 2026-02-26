@@ -8,7 +8,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import {
   LayoutDashboard, Building2, PackageOpen, Users,
-  ClipboardList, CheckSquare, BarChart3, Menu,
+  ClipboardList, CheckSquare, Menu,
 } from "lucide-react"
 
 const navItems = [
@@ -18,7 +18,6 @@ const navItems = [
   { href: "/workers", label: "Trabajadores", icon: Users },
   { href: "/assignments", label: "Asignaciones", icon: ClipboardList },
   { href: "/settlements", label: "Rendiciones", icon: CheckSquare },
-  { href: "/reports", label: "Reportes", icon: BarChart3 },
 ]
 
 export function MobileNav() {

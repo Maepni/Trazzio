@@ -38,8 +38,7 @@ export async function GET(req: Request) {
     include: {
       payments: { orderBy: { paidAt: "desc" } },
       assignments: {
-        where: { status: "SETTLED" },
-        include: { settlement: true },
+        include: { dailySales: true, product: true },
       },
     },
     orderBy: { name: "asc" },
@@ -84,8 +83,7 @@ async function getWorkerBalance(workerId: string) {
     include: {
       payments: { orderBy: { paidAt: "desc" } },
       assignments: {
-        where: { status: "SETTLED" },
-        include: { settlement: true },
+        include: { dailySales: true, product: true },
       },
     },
   })
@@ -95,12 +93,12 @@ async function getWorkerBalance(workerId: string) {
 
 function computeBalance(worker: any) {
   const totalEarned = worker.assignments.reduce((acc: number, a: any) => {
-    if (!a.settlement) return acc
-    const amountDue = Number(a.settlement.amountDue)
+    const totalSold = a.dailySales.reduce((s: number, d: any) => s + d.quantitySold, 0)
+    const amountDue = totalSold * Number(a.product.salePrice)
     if (worker.commissionType === "PERCENTAGE") {
       return acc + amountDue * (Number(worker.commission) / 100)
     } else {
-      return acc + (a.quantitySold ?? 0) * Number(worker.commission)
+      return acc + totalSold * Number(worker.commission)
     }
   }, 0)
 
@@ -116,7 +114,7 @@ function computeBalance(worker: any) {
     commission: Number(worker.commission),
     totalEarned: Math.round(totalEarned * 100) / 100,
     totalPaid: Math.round(totalPaid * 100) / 100,
-    pendingBalance: Math.round((totalEarned - totalPaid) * 100) / 100,
+    pendingBalance: Math.max(0, Math.round((totalEarned - totalPaid) * 100) / 100),
     recentPayments: worker.payments.slice(0, 5),
   }
 }
