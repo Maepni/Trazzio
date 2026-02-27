@@ -10,6 +10,64 @@
 
 ---
 
+## 0. Contexto ejecutable obligatorio (nueva sesion)
+
+### 0.1 Archivos y rutas de trabajo
+
+- Contexto base: `docs/CLAUDE.md`
+- Pantallas admin: `components/admin/stock-client.tsx`, `components/admin/assignments-client.tsx`
+- Pantallas worker: `app/(worker)/settle/page.tsx`, `components/worker/settle-form.tsx`
+- Shared: `components/shared/product-search-combobox.tsx`, `components/shared/batch-group-card.tsx`, `components/shared/company-badge.tsx`
+- API: `app/api/stock/route.ts`, `app/api/assignments/route.ts`, `app/api/assignments/[id]/route.ts`
+- Dominio: `prisma/schema.prisma`, `lib/batch-grouping.ts`
+
+### 0.2 Comandos base
+
+```bash
+npm test
+npm run lint
+npx tsc --noEmit
+npx prisma db push && npm run db:seed
+```
+
+### 0.3 Contratos minimos esperados para UI (transicion)
+
+```ts
+type AssignmentUI = {
+  id: string
+  workerId: string
+  status: "ACTIVE" | "CLOSED"
+  auditStatus?: "PENDING" | "IN_REVIEW" | "AUDITED"
+  startDate: string
+  batchId?: string | null
+  batch?: {
+    id: string
+    code: string
+    status: "OPEN" | "CLOSED"
+    openedAt: string
+    closedAt?: string | null
+  } | null
+  remaining: number
+  product: {
+    id: string
+    name: string
+    code?: string | null
+    aliases?: string[] | null
+    company: { id: string; name: string }
+    unitPerBox: number
+    salePrice: number
+    productType?: string
+  }
+}
+```
+
+### 0.4 Guardrails de implementacion
+
+1. No romper compatibilidad con datos sin `batchId` durante fases 1-3.
+2. Cualquier cambio de API debe tener test de regresion asociado.
+3. No quitar fallback legacy hasta que la suite final y QA manual esten en PASS.
+4. En UI no introducir patrones visuales ajenos al sistema actual.
+
 ### Task 1: Baseline y contrato de transición
 
 **Files:**
@@ -63,6 +121,21 @@ Expected: FAIL por campos/relaciones inexistentes.
 - Agregar `auditStatus` en `Assignment`.
 - Agregar `code` y `aliases` en `Product`.
 - Actualizar seed mínimo para nuevos campos.
+
+Agregar enums sugeridos:
+
+```prisma
+enum BatchStatus {
+  OPEN
+  CLOSED
+}
+
+enum AuditStatus {
+  PENDING
+  IN_REVIEW
+  AUDITED
+}
+```
 
 **Step 4: Push schema + run test**
 
@@ -140,6 +213,19 @@ Expected: FAIL.
 - `POST /api/stock`: vincular ingresos al lote activo.
 - `POST /api/assignments`: guardar `batchId`.
 - `DELETE /api/assignments/[id]`: cerrar trazable y recalcular progreso de lote.
+
+Contrato de respuesta recomendado en endpoints de asignaciones:
+
+```ts
+{
+  id: string
+  batchId: string | null
+  batchCode?: string | null
+  status: "ACTIVE" | "CLOSED"
+  auditStatus: "PENDING" | "IN_REVIEW" | "AUDITED"
+  nextBatchEnabled?: boolean
+}
+```
 
 **Step 4: Run tests to verify pass**
 
@@ -334,6 +420,12 @@ Expected: FAIL.
 - targets >=44px.
 - evitar overflow horizontal mobile.
 
+Checklist responsive obligatorio por vista:
+
+- `stock-client`: no desbordar tablas/cards en 375.
+- `assignments-client`: acordeones funcionales por teclado y tactil.
+- `settle-form`: CTA visible con teclado abierto y sin tap targets menores a 44px.
+
 **Step 4: Run test to verify pass**
 
 Run: `npx vitest run tests/components/responsive-a11y-smoke.test.tsx`
@@ -402,6 +494,9 @@ Mitigación: render-window y límites de render por frame.
 4. Riesgo: UI densa en mobile.
 Mitigación: layout mobile-first con tarjetas y acordeones.
 
+5. Riesgo: inconsistencias por datos historicos agrupados por fecha.
+Mitigación: fixtures mixtas (persistido + legacy) en tests de API y UI.
+
 ## Definición de Done
 
 1. Todas las tareas 1-10 con checks en PASS.
@@ -409,3 +504,11 @@ Mitigación: layout mobile-first con tarjetas y acordeones.
 3. Auditoría visible y consistente en admin.
 4. Worker registra sin ambigüedad ni estados inválidos.
 5. Responsive/a11y validados en 375/768/1024/1440.
+
+## Handoff checklist para nueva sesion
+
+1. Leer `docs/CLAUDE.md` y este plan completo antes de editar.
+2. Ejecutar Task 1 y registrar baseline real.
+3. Seguir tareas en orden; no saltar migraciones.
+4. Mantener TDD por task (fail -> fix -> pass).
+5. Al final de cada task, commit pequeño y verificable.
