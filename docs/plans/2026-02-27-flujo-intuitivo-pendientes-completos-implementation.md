@@ -1,7 +1,5 @@
 # Flujo Intuitivo Pendientes Completos Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-
 **Goal:** Completar todos los pendientes del flujo intuitivo con lote persistido, auditoría explícita, validaciones robustas y hardening responsive/a11y sin romper compatibilidad actual.
 
 **Architecture:** Se usará una estrategia incremental compatible: primero esquema y contratos con fallback legacy por fecha, luego transición de UI a `batchId` persistido, y por último endurecimiento de reglas y UX. Todo cambio se implementa con TDD en pasos cortos y commits frecuentes.

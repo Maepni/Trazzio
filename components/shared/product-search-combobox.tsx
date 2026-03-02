@@ -8,6 +8,8 @@ import { formatUnitsToBoxes } from "@/lib/utils"
 interface Product {
   id: string
   name: string
+  code?: string | null
+  aliases?: string[] | null
   company: { name: string }
   stock: number
   unitPerBox?: number
@@ -35,11 +37,15 @@ export function ProductSearchCombobox({
   const filtered =
     query.trim() === ""
       ? []
-      : products.filter(
-          (p) =>
-            p.name.toLowerCase().includes(query.toLowerCase()) ||
-            p.company.name.toLowerCase().includes(query.toLowerCase())
-        )
+      : products.filter((p) => {
+          const q = query.toLowerCase()
+          return (
+            p.name.toLowerCase().includes(q) ||
+            p.company.name.toLowerCase().includes(q) ||
+            (p.code != null && p.code.toLowerCase().includes(q)) ||
+            (p.aliases != null && p.aliases.some((a) => a.toLowerCase().includes(q)))
+          )
+        })
 
   const handleSelect = (product: Product) => {
     onSelect(product)
@@ -69,7 +75,9 @@ export function ProductSearchCombobox({
   useEffect(() => {
     if (focusedIndex >= 0 && listRef.current) {
       const item = listRef.current.children[focusedIndex] as HTMLElement
-      item?.scrollIntoView({ block: "nearest" })
+      if (typeof item?.scrollIntoView === "function") {
+        item.scrollIntoView({ block: "nearest" })
+      }
     }
   }, [focusedIndex])
 
@@ -89,6 +97,10 @@ export function ProductSearchCombobox({
       <div className="relative">
         <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />
         <Input
+          role="combobox"
+          aria-haspopup="listbox"
+          aria-expanded={open && query.trim() !== ""}
+          aria-autocomplete="list"
           type="text"
           placeholder={placeholder}
           value={query}

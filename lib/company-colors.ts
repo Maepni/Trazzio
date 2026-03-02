@@ -13,6 +13,17 @@ const PRESET_COLORS = [
   "bg-orange-100 text-orange-800",
 ]
 
+const PRESET_BORDERS = [
+  "border-l-blue-400",
+  "border-l-green-500",
+  "border-l-purple-400",
+  "border-l-amber-400",
+  "border-l-rose-400",
+  "border-l-teal-500",
+  "border-l-indigo-400",
+  "border-l-orange-400",
+]
+
 function hashKey(key: string): number {
   let hash = 0
   for (let i = 0; i < key.length; i++) {
@@ -24,4 +35,8 @@ function hashKey(key: string): number {
 export function getCompanyColorClass(colorKey: string): string {
   if (COLOR_CLASSES[colorKey]) return COLOR_CLASSES[colorKey]
   return PRESET_COLORS[hashKey(colorKey)]
+}
+
+export function getCompanyBorderClass(colorKey: string): string {
+  return PRESET_BORDERS[hashKey(colorKey)]
 }

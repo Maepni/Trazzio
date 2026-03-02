@@ -94,13 +94,24 @@ type ItemState = {
 
 type Step = "form" | "summary"
 
+/** Filtra las asignaciones al lote activo (startDate más reciente). */
+function getActiveBatch(assignments: any[]): any[] {
+  if (assignments.length === 0) return assignments
+  const days = assignments.map((a) => (a.startDate ?? "").toString().slice(0, 10))
+  const mostRecentDay = days.reduce((max, d) => (d > max ? d : max), days[0])
+  return assignments.filter((a) => (a.startDate ?? "").toString().slice(0, 10) === mostRecentDay)
+}
+
 export function SettleForm({ assignments }: { assignments: any[] }) {
   const router = useRouter()
   const [step, setStep] = useState<Step>("form")
   const [loading, setLoading] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  const activeBatch = getActiveBatch(assignments)
 
   const [items, setItems] = useState<ItemState[]>(
-    assignments.map((a) => ({
+    activeBatch.map((a) => ({
       assignmentId: a.id,
       productName: a.product.name,
       companyName: a.product.company.name,
@@ -138,15 +149,20 @@ export function SettleForm({ assignments }: { assignments: any[] }) {
   const totalPaidToday = activeItems.reduce((sum, i) => sum + (Number(i.amountPaid) || 0), 0)
 
   const handleConfirm = () => {
+    setFormError(null)
     // Validar
     for (const item of items) {
       if (item.quantitySold + item.quantityMerma > item.remaining) {
-        toast.error(`"${item.productName}": vendido + merma supera el restante (${item.remaining}u)`)
+        const msg = `"${item.productName}": vendido + merma supera el restante (${item.remaining}u)`
+        setFormError(msg)
+        toast.error(msg)
         return
       }
     }
     if (activeItems.length === 0) {
-      toast.error("No hay nada que registrar. Ingresa ventas, merma o pago en al menos un producto.")
+      const msg = "No hay nada que registrar. Ingresa ventas, merma o pago en al menos un producto."
+      setFormError(msg)
+      toast.error(msg)
       return
     }
     setStep("summary")
@@ -185,7 +201,7 @@ export function SettleForm({ assignments }: { assignments: any[] }) {
     }
   }
 
-  if (assignments.length === 0) {
+  if (activeBatch.length === 0) {
     return (
       <div className="p-6 flex flex-col items-center justify-center min-h-[70vh] text-center">
         <CheckCircle2 className="h-16 w-16 text-green-400 mb-4" />
@@ -272,7 +288,7 @@ export function SettleForm({ assignments }: { assignments: any[] }) {
           >
             {loading
               ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Enviando...</>
-              : "✓ Confirmar registro"}
+              : "Finalizar registro del día"}
           </Button>
         </div>
       </div>
@@ -284,7 +300,7 @@ export function SettleForm({ assignments }: { assignments: any[] }) {
     <div className="p-4 space-y-4 max-w-lg mx-auto pb-24">
       <div>
         <h2 className="text-xl font-bold text-[#1e3a5f]">Registro del día</h2>
-        <p className="text-gray-500 text-sm">{assignments.length} producto(s) activo(s)</p>
+        <p className="text-gray-500 text-sm">{activeBatch.length} producto(s) activo(s)</p>
       </div>
 
       <div className="space-y-4">
@@ -306,9 +322,9 @@ export function SettleForm({ assignments }: { assignments: any[] }) {
                     <p className="text-xs text-gray-400">{item.companyName}</p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-xs text-gray-400">Restante calculado</p>
+                    <p className="text-xs text-gray-400">Quedan</p>
                     <p className="text-sm font-bold text-blue-700">
-                      {formatUnitsToBoxes(item.remaining, item.unitPerBox)}
+                      Restante: {Math.max(0, item.remaining - item.quantitySold - item.quantityMerma)}u
                     </p>
                   </div>
                 </div>
@@ -317,16 +333,16 @@ export function SettleForm({ assignments }: { assignments: any[] }) {
                 <div className="flex gap-2 text-xs">
                   <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-lg">
                     Asignado: {formatUnitsToBoxes(
-                      assignments[idx]?.quantityAssigned ?? item.remaining,
+                      activeBatch[idx]?.quantityAssigned ?? item.remaining,
                       item.unitPerBox
                     )}
                   </span>
                   <span className="bg-green-50 text-green-700 px-2 py-1 rounded-lg">
-                    Vendido acum: {assignments[idx]?.totalSold ?? 0}u
+                    Vendido acum: {activeBatch[idx]?.totalSold ?? 0}u
                   </span>
-                  {(assignments[idx]?.totalMerma ?? 0) > 0 && (
+                  {(activeBatch[idx]?.totalMerma ?? 0) > 0 && (
                     <span className="bg-red-50 text-red-600 px-2 py-1 rounded-lg">
-                      Merma acum: {assignments[idx]?.totalMerma}u
+                      Merma acum: {activeBatch[idx]?.totalMerma}u
                     </span>
                   )}
                 </div>
@@ -414,8 +430,19 @@ export function SettleForm({ assignments }: { assignments: any[] }) {
         })}
       </div>
 
+      {/* Error inline visible */}
+      {formError && (
+        <div
+          role="alert"
+          className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 flex items-start gap-2"
+        >
+          <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+          <span>{formError}</span>
+        </div>
+      )}
+
       {/* Botón sticky */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 max-w-lg mx-auto">
+      <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-gray-200">
         <Button
           type="button"
           className="w-full h-12 bg-[#f97316] hover:bg-orange-600 text-white font-semibold gap-2"

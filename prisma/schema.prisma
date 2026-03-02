@@ -7,6 +7,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Batch {
+  id           String      @id @default(cuid())
+  code         String      @unique
+  status       BatchStatus @default(OPEN)
+  openedAt     DateTime    @default(now())
+  closedAt     DateTime?
+  notes        String?
+  createdAt    DateTime    @default(now())
+
+  stockEntries StockEntry[]
+  assignments  Assignment[]
+}
+
 model Company {
   id        String    @id @default(cuid())
   name      String
@@ -17,6 +30,8 @@ model Company {
 model Product {
   id            String          @id @default(cuid())
   name          String
+  code          String?
+  aliases       String[]        @default([])
   companyId     String
   company       Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   costPrice     Decimal         @db.Decimal(10, 2)
@@ -46,16 +61,17 @@ model Worker {
 }
 
 model Assignment {
-  id        String   @id @default(cuid())
-  workerId  String
-  worker    Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
-  productId String
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  startDate DateTime @default(now())
-
+  id               String          @id @default(cuid())
+  workerId         String
+  worker           Worker          @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  startDate        DateTime        @default(now())
   quantityAssigned Int
-
-  status AssignmentStatus @default(ACTIVE)
+  status           AssignmentStatus @default(ACTIVE)
+  auditStatus      AuditStatus      @default(PENDING)
+  batchId          String?
+  batch            Batch?           @relation(fields: [batchId], references: [id])
 
   dailySales DailySale[]
 }
@@ -79,6 +95,8 @@ model StockEntry {
   boxes     Int?
   entryDate DateTime @default(now())
   notes     String?
+  batchId   String?
+  batch     Batch?   @relation(fields: [batchId], references: [id])
 }
 
 model WorkerPayment {
@@ -119,4 +137,15 @@ enum ProductType {
   ESTANDAR
   LECHE
   ARROZ
+}
+
+enum BatchStatus {
+  OPEN
+  CLOSED
+}
+
+enum AuditStatus {
+  PENDING
+  IN_REVIEW
+  AUDITED
 }

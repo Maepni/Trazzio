@@ -11,12 +11,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus, PackageOpen, AlertTriangle, ChevronDown, ChevronRight, Trash2, MinusCircle, ArrowUpCircle, ArrowDownCircle } from "lucide-react"
+import { Plus, PackageOpen, AlertTriangle, ChevronDown, ChevronRight, Trash2, MinusCircle, ArrowUpCircle, ArrowDownCircle, Search, X } from "lucide-react"
 import { formatCurrency, formatUnitsToBoxes, formatDateTime, formatDate } from "@/lib/utils"
 import { getProductLabels } from "@/lib/product-types"
 import { CompanyBadge } from "@/components/shared/company-badge"
-import { ProductSearchCombobox } from "@/components/shared/product-search-combobox"
 import { BatchGroupCard } from "@/components/shared/batch-group-card"
+import { getCompanyBorderClass } from "@/lib/company-colors"
 import { buildVisualBatches } from "@/lib/batch-grouping"
 
 export function StockClient({ initialProducts, initialEntries }: { initialProducts: any[]; initialEntries: any[] }) {
@@ -26,7 +26,7 @@ export function StockClient({ initialProducts, initialEntries }: { initialProduc
   const [productQtys, setProductQtys] = useState<Record<string, { boxes: number; units: number }>>({})
   const [batchNotes, setBatchNotes] = useState("")
   const [submitting, setSubmitting] = useState(false)
-  const [searchTerm, setSearchTerm] = useState("")
+  const [inventorySearch, setInventorySearch] = useState("")
   const [collapsedCompanies, setCollapsedCompanies] = useState<Set<string>>(new Set())
   const [adjustOpen, setAdjustOpen] = useState(false)
   const [adjustProductId, setAdjustProductId] = useState("")
@@ -349,16 +349,33 @@ export function StockClient({ initialProducts, initialEntries }: { initialProduc
           </h2>
         </div>
         {/* Búsqueda por nombre o empresa */}
-        <ProductSearchCombobox
-          products={products}
-          onSelect={(p) => setSearchTerm(p.name)}
-          placeholder="Buscar producto o empresa..."
-        />
+        <div className="relative">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />
+          <Input
+            type="text"
+            placeholder="Buscar producto o empresa..."
+            value={inventorySearch}
+            onChange={(e) => setInventorySearch(e.target.value)}
+            className="pl-9 pr-8"
+            autoComplete="off"
+          />
+          {inventorySearch && (
+            <button
+              type="button"
+              onClick={() => setInventorySearch("")}
+              className="absolute right-2 top-2.5 text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
         {/* Agrupado por empresa */}
         {(() => {
-          const filtered = products.filter((p: any) =>
-            p.name.toLowerCase().includes(searchTerm.toLowerCase())
-          )
+          const filtered = products.filter((p: any) => {
+            if (!inventorySearch.trim()) return true
+            const q = inventorySearch.toLowerCase()
+            return p.name.toLowerCase().includes(q) || p.company.name.toLowerCase().includes(q)
+          })
           const grouped = Array.from(
             new Map(filtered.map((p: any) => [p.company.id, p.company])).values()
           ) as any[]
@@ -367,7 +384,7 @@ export function StockClient({ initialProducts, initialEntries }: { initialProduc
             return (
               <Card className="border-0 shadow-sm">
                 <CardContent className="py-10 text-center text-sm text-gray-400">
-                  Sin resultados para "{searchTerm}"
+                  Sin resultados para "{inventorySearch}"
                 </CardContent>
               </Card>
             )
@@ -383,7 +400,7 @@ export function StockClient({ initialProducts, initialEntries }: { initialProduc
               return next
             })
             return (
-              <Card key={company.id} className="border-0 shadow-sm overflow-hidden">
+              <Card key={company.id} className={`shadow-sm overflow-hidden border-l-4 ${getCompanyBorderClass(company.id)}`}>
                 <button
                   type="button"
                   className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors border-b"

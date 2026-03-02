@@ -3,114 +3,185 @@
 Fecha: 2026-02-26  
 Estado: Aprobado por usuario
 
-## 1. Objetivo
+## 1. Contexto de negocio
 
-Mejorar el sistema para que sea intuitivo y de flujo simple en operación diaria, con foco en:
+El sistema se usa en operación diaria para:
 
-- Identificación rápida por empresa en Mercadería.
-- Búsqueda eficiente de productos en catálogos de ~50 ítems.
-- Asignación clara para 20-25 productos por trabajador.
-- Registro diario con cálculos automáticos visibles y cierre explícito.
-- Estructura por lotes consistente en Mercadería y Asignaciones.
+- Registrar ingresos de mercadería.
+- Asignar productos por trabajador.
+- Registrar ventas/merma diarias del trabajador.
 
-## 2. Decisiones validadas con usuario
+Problemas detectados:
 
-- Estrategia: mejora incremental sobre la UI actual.
-- Regla de lote nuevo: `Lote +1` automático cuando se cierra auditoría completa del lote vigente.
-- Registro del trabajador: mostrar solo productos del lote activo.
-- Patrón en Asignaciones: doble colapsable (primero lote, luego trabajador).
-- Registro diario: botón explícito `Finalizar registro del día`.
+- Catálogo de productos amplio (~50), dropdown largo dificulta selección.
+- Asignaciones de 20-25 productos por trabajador generan carga visual/confusión.
+- Falta estructura clara por lotes para saber qué corresponde a qué.
+- Registro diario sin cierre explícito visible.
+- Necesidad de mostrar cálculos clave (restante) en el mismo flujo.
 
-## 3. Arquitectura de pantallas y flujo
+## 2. Objetivo
 
-### 3.1 Mercadería
+Lograr un flujo operativo intuitivo, rápido y sin ambigüedad, con coherencia entre Mercadería, Asignaciones y Registro del día.
 
-- Sección `Últimos ingresos` separada por lotes numerados (`Lote 01`, `Lote 02`, ...).
-- Cada lote será colapsable con cabecera de contexto: lote, fecha/hora, empresa(s), total unidades.
-- En detalle del lote, cada producto debe incluir badge de empresa visualmente distinguible.
+## 3. Decisiones validadas con usuario
 
-### 3.2 Asignaciones
+1. Estrategia incremental sobre la UI actual.
+2. Asignaciones con doble colapsable: `Lote > Trabajador`.
+3. `Lote +1` automático al cerrar auditoría completa del lote vigente.
+4. Registro del trabajador muestra solo productos del lote activo.
+5. Botón de cierre explícito: `Finalizar registro del día`.
 
-- Nivel 1 colapsable por `Lote N`.
-- Nivel 2 colapsable por `Trabajador` dentro de cada lote.
-- Cada trabajador muestra productos asignados y estado de auditoría.
-- Al quedar auditados/cerrados todos los trabajadores del lote, transición automática a `Lote N+1`.
+## 4. Modelo mental unificado
 
-### 3.3 Registro del día (trabajador)
+- Mercadería: crea y organiza ingresos por lote.
+- Asignaciones: distribuye ese lote por trabajador.
+- Registro del día: consume solo el lote activo del trabajador.
 
-- Solo se muestran productos del lote activo.
-- Por producto: asignado inicial, vendido, merma y restante calculado automáticamente.
-- Acción principal fija y clara: `Finalizar registro del día`.
+Este modelo evita mezcla de contextos y reduce errores operativos.
 
-## 4. Diseño de interacción
+## 5. Arquitectura de pantallas
 
-### 4.1 Empresas distinguibles
+### 5.1 Mercadería
 
-- Reutilizar `CompanyBadge` con color estable por empresa.
-- No depender solo de color: incluir texto y señal secundaria (borde/indicador).
+- Sección `Últimos ingresos` agrupada por lotes visuales (`Lote 01`, `Lote 02`, ...).
+- Cada lote en tarjeta colapsable con:
+  - Id de lote
+  - Fecha/hora
+  - Empresa(s)
+  - Total unidades
+- Detalle del lote con lista de productos y empresa claramente identificada.
 
-### 4.2 Búsqueda de productos (50+)
+### 5.2 Asignaciones
 
-- Sustituir dropdown extenso por combobox con búsqueda por nombre, empresa y alias/código (si existe).
-- Soporte de teclado completo (flechas, Enter, Escape).
-- Si hay más de 50 resultados: virtualización de lista para rendimiento.
-- Mostrar contexto en resultados (empresa, stock, unidad).
+- Nivel 1 colapsable por lote.
+- Nivel 2 colapsable por trabajador dentro del lote.
+- Cada trabajador muestra:
+  - productos asignados
+  - totales
+  - estado de auditoría (`Pendiente`, `En revisión`, `Auditado`)
+- Cuando todos los trabajadores de lote están auditados/cerrados, lote cambia a cerrado y se habilita siguiente lote.
 
-### 4.3 Asignación de 20-25 productos
+### 5.3 Registro del día (trabajador)
 
-- Encabezado de trabajador con resumen operativo (productos, unidades, avance).
-- Lista editable compacta con totales siempre visibles.
-- Estados claros: `Pendiente`, `En revisión`, `Auditado`.
+- Solo productos del lote activo.
+- Por producto mostrar:
+  - asignado inicial
+  - vendido
+  - merma
+  - restante automático
+- CTA principal sticky: `Finalizar registro del día`.
+- Paso de confirmación antes de envío final.
 
-### 4.4 Registro del día
+## 6. Diseño de interacción
 
-- Cálculo visible por producto en tiempo real.
-- Resumen sticky inferior con totales (vendido, merma, restante global).
-- Confirmación previa al envío final.
+### 6.1 Identidad por empresa
 
-## 5. Reglas funcionales
+- `CompanyBadge` consistente y reutilizable.
+- Debe incluir texto y contraste suficiente.
+- No depender solo de color (accesibilidad): agregar borde/indicador adicional.
 
-### 5.1 Cálculo
+### 6.2 Selección de productos (50+)
 
-- Fórmula por producto: `restante = asignado_inicial - vendido - merma`.
+- Reemplazar selects largos por combobox.
+- Búsqueda por:
+  - nombre producto
+  - empresa
+  - código/alias (si existe)
+- Soporte teclado: `ArrowUp`, `ArrowDown`, `Enter`, `Escape`.
+- Resultado con contexto: empresa, stock actual, unidad.
+- Virtualizar lista cuando supere ~50 items para rendimiento.
 
-### 5.2 Validaciones
+### 6.3 Asignaciones masivas (20-25)
+
+- Encabezado de trabajador con resumen operativo.
+- Lista compacta editable por producto con feedback inmediato.
+- Mantener acción principal visible en formularios largos.
+
+### 6.4 Registro del día
+
+- Cálculo en tiempo real por producto.
+- Resumen sticky inferior:
+  - vendido total
+  - merma total
+  - restante global
+- Bloquear doble envío tras clic de cierre.
+
+## 7. Reglas funcionales
+
+### 7.1 Fórmula de restante
+
+`restante = asignado_inicial - vendido - merma`
+
+### 7.2 Validaciones
 
 - `vendido >= 0`
 - `merma >= 0`
 - `vendido + merma <= asignado_inicial`
-- Si falla validación: bloquear envío y mostrar error inline + resumen de errores.
+- Si falla:
+  - error inline por producto
+  - resumen de errores global
+  - envío bloqueado
 
-### 5.3 Finalización
+### 7.3 Finalización del registro diario
 
-- `Finalizar registro del día` deja el registro en estado `Completado` con timestamp.
-- Evitar doble envío con loading/disabled.
+- Botón explícito de cierre.
+- Confirmación previa con resumen.
+- Persistencia con estado `Completado` + timestamp.
 
-## 6. Diseño responsive
+## 8. Sistema visual aplicado (UI/UX)
 
-- En mobile: acordeones por lote/trabajador y tarjetas compactas de producto.
-- En tablet/desktop: tablas y grillas densas para lectura rápida.
-- Mobile-first con escala fluida de tipografía y spacing (`clamp`).
-- Touch targets mínimos de 44px.
-- Sin scroll horizontal en 375px.
+Base aplicada desde skills:
 
-## 7. Base UI/UX aplicada (skills)
+- Patrón recomendado: `Data-Dense + Drill-Down` para contexto operativo.
+- Jerarquía visual alta: encabezados claros, sumarios y detalle progresivo.
+- Interacciones de alto rendimiento y bajo ruido visual.
+- Feedback explícito en carga, éxito y error.
 
-- `ui-ux-pro-max`: priorizar patrón Data-Dense + Drill-Down para entorno operativo.
-- `ui-ux-pro-max`: accesibilidad en formularios (labels, feedback de submit, errores anunciados).
-- `responsive-design`: jerarquía mobile-first, colapsables estables y layout adaptable en 375/768/1024/1440.
+## 9. Responsive y accesibilidad
 
-## 8. Fases de implementación
+### 9.1 Breakpoints
 
-1. Mercadería: lotes colapsables + empresa visible + búsqueda mejorada.
-2. Asignaciones: doble colapsable lote/trabajador + progreso de auditoría.
-3. Registro del día: datos completos + cálculo automático + CTA final explícita.
-4. QA responsive y accesibilidad básica.
+- 375px (mobile)
+- 768px (tablet)
+- 1024px (desktop)
+- 1440px (wide)
 
-## 9. Criterios de éxito
+### 9.2 Comportamiento
 
-- Buscar producto entre 50+ ítems de forma rápida y sin dropdown largo.
-- Identificar empresa y lote de inmediato en Mercadería.
-- Operar Asignaciones sin confusión por estructura lote > trabajador.
-- Registrar el día con claridad de restante y cierre explícito.
-- Crear `Lote +1` de forma automática al cerrar auditoría completa.
+- Mobile: acordeones por lote/trabajador + tarjetas.
+- Tablet/Desktop: grillas y tablas compactas.
+- Espaciado mobile-first (`px-4 sm:px-6 lg:px-8`).
+- Tipografía/spacing fluidos (`clamp`) cuando aplique.
+- Targets táctiles mínimos de 44px.
+- Sin scroll horizontal en mobile.
+
+### 9.3 A11y mínimo
+
+- Labels visibles en inputs.
+- Errores con `role="alert"` o `aria-live`.
+- Colapsables con `button` + `aria-expanded`.
+- Navegación por teclado completa en combobox/acordeones.
+
+## 10. Criterios de éxito
+
+1. Producto localizable rápidamente en catálogo grande sin dropdown extenso.
+2. Empresa y lote identificables de inmediato en Mercadería y Asignaciones.
+3. Flujo de asignación entendible con jerarquía `Lote > Trabajador`.
+4. Registro del día con cálculo de restante visible y cierre inequívoco.
+5. `Lote +1` solo tras cierre completo de auditoría del lote actual.
+
+## 11. No objetivos (para evitar desvíos)
+
+- No rediseñar el sistema completo desde cero.
+- No introducir nuevas entidades complejas fuera del modelo de lote actual.
+- No cambiar reglas financieras ajenas a este flujo.
+
+## 12. Handoff para nueva sesión
+
+Al iniciar implementación en sesión nueva, mantener estas decisiones como inmutables:
+
+1. Doble colapsable en Asignaciones.
+2. Lote +1 automático por cierre completo.
+3. Registro diario solo del lote activo.
+4. Botón `Finalizar registro del día` obligatorio y visible.
+5. Enfoque incremental y responsive mobile-first.

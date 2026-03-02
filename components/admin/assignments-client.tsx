@@ -10,11 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, ClipboardList, User, History, XCircle, AlertTriangle } from "lucide-react"
+import { Plus, ClipboardList, User, History, XCircle, AlertTriangle, ChevronDown, ChevronRight, ShieldCheck } from "lucide-react"
 import { formatCurrency, formatUnitsToBoxes, formatDate, formatDateTime } from "@/lib/utils"
 import { getProductLabels } from "@/lib/product-types"
 import { CompanyBadge } from "@/components/shared/company-badge"
-import { buildVisualBatches } from "@/lib/batch-grouping"
 
 export function AssignmentsClient({ initialWorkers, initialProducts, initialAssignments }: {
   initialWorkers: any[]; initialProducts: any[]; initialAssignments: any[]
@@ -30,6 +29,26 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
 
   // Dialog cierre
   const [closingAssignment, setClosingAssignment] = useState<any | null>(null)
+
+  // Estado de acordeones: sets de los que están EXPANDIDOS (vacío = todos colapsados)
+  const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set())
+  const [expandedWorkers, setExpandedWorkers] = useState<Set<string>>(new Set())
+
+  // Auditoría
+  const [auditingGroup, setAuditingGroup] = useState<{
+    workerId: string; workerName: string; batchDay: string; items: any[]
+  } | null>(null)
+
+  const toggleBatch = (day: string) => setExpandedBatches(prev => {
+    const next = new Set(prev)
+    if (next.has(day)) next.delete(day); else next.add(day)
+    return next
+  })
+  const toggleWorker = (key: string) => setExpandedWorkers(prev => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    return next
+  })
 
   const { data: workers = initialWorkers } = useQuery({
     queryKey: ["workers"],
@@ -96,6 +115,25 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
     onError: (e: any) => toast.error(e.message),
   })
 
+  const auditMutation = useMutation({
+    mutationFn: async (data: { workerId: string; batchDay: string }) => {
+      const res = await fetch("/api/assignments/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      })
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Error") }
+      return res.json()
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["assignments-active"] })
+      queryClient.invalidateQueries({ queryKey: ["products-available"] })
+      toast.success(`Auditoría completada. Stock devuelto: +${data.totalRestored}u`)
+      setAuditingGroup(null)
+    },
+    onError: (e: any) => toast.error(e.message),
+  })
+
   const resetForm = () => {
     setWorkerId("")
     setSelectedCompanyId("")
@@ -126,23 +164,36 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
     createMutation.mutate({ workerId, items })
   }
 
-  // Agrupar asignaciones activas por trabajador
-  const groupedByWorker = assignments.reduce((acc: any, a: any) => {
-    if (!acc[a.workerId]) {
-      acc[a.workerId] = {
-        worker: a.worker,
-        items: [],
-        totalDue: 0,
-        totalPaid: 0,
-        pendingDebt: 0,
+  // Badge de auditoría: "AUDITED" solo si todos están cerrados+auditados
+  const getWorkerAuditBadge = (items: any[]) => {
+    if (items.every((a: any) => a.status === "CLOSED" && a.auditStatus === "AUDITED")) return "AUDITED"
+    const active = items.filter((a: any) => a.status === "ACTIVE")
+    if (active.some((a: any) => a.auditStatus === "IN_REVIEW")) return "IN_REVIEW"
+    return "PENDING"
+  }
+
+  // Agrupar por lote (fecha de startDate) y luego por trabajador
+  const batchMap: Record<string, any[]> = {}
+  assignments.forEach((a: any) => {
+    const day = a.startDate.toString().slice(0, 10)
+    if (!batchMap[day]) batchMap[day] = []
+    batchMap[day].push(a)
+  })
+  const batchDays = Object.keys(batchMap).sort((a, b) => b.localeCompare(a))
+  const batches = batchDays.map((day, index) => {
+    const items = batchMap[day]
+    const workerMap: Record<string, { worker: any; items: any[]; totalDue: number; totalPaid: number; pendingDebt: number }> = {}
+    items.forEach((a: any) => {
+      if (!workerMap[a.workerId]) {
+        workerMap[a.workerId] = { worker: a.worker, items: [], totalDue: 0, totalPaid: 0, pendingDebt: 0 }
       }
-    }
-    acc[a.workerId].items.push(a)
-    acc[a.workerId].totalDue += a.totalDue ?? 0
-    acc[a.workerId].totalPaid += a.totalPaid ?? 0
-    acc[a.workerId].pendingDebt += a.pendingDebt ?? 0
-    return acc
-  }, {})
+      workerMap[a.workerId].items.push(a)
+      workerMap[a.workerId].totalDue += a.totalDue ?? 0
+      workerMap[a.workerId].totalPaid += a.totalPaid ?? 0
+      workerMap[a.workerId].pendingDebt += a.pendingDebt ?? 0
+    })
+    return { day, label: `Lote #${index + 1}`, totalItems: items.length, workers: Object.values(workerMap) }
+  })
 
   return (
     <div className="space-y-6">
@@ -268,8 +319,8 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
         </Dialog>
       </div>
 
-      {/* Lista de asignaciones activas agrupadas por trabajador */}
-      {Object.keys(groupedByWorker).length === 0 ? (
+      {/* Lista de asignaciones: acordeón Lote > Trabajador */}
+      {batches.length === 0 ? (
         <Card className="border-0 shadow-sm">
           <CardContent className="flex flex-col items-center py-12 text-gray-400">
             <ClipboardList className="h-10 w-10 mb-3 opacity-30" />
@@ -277,113 +328,187 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
           </CardContent>
         </Card>
       ) : (
-        Object.values(groupedByWorker).map((group: any) => (
-          <Card key={group.worker.id} className="border-0 shadow-sm overflow-hidden">
-            <div className="flex items-center gap-3 px-5 py-3 border-b bg-gray-50">
-              <div className="w-8 h-8 rounded-full bg-[#1e3a5f]/10 flex items-center justify-center flex-shrink-0">
-                <User className="h-4 w-4 text-[#1e3a5f]" />
-              </div>
-              <div className="flex-1">
-                <p className="font-semibold text-gray-900">{group.worker.name}</p>
-                <p className="text-xs text-gray-400">{group.items.length} producto(s) activo(s)</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-gray-400">Saldo pendiente</p>
-                <p className={`text-sm font-bold ${group.pendingDebt > 0 ? "text-orange-600" : "text-green-600"}`}>
-                  {formatCurrency(group.pendingDebt)}
-                </p>
-              </div>
-            </div>
+        batches.map((batch) => {
+          const isLoteOpen = expandedBatches.has(batch.day)
+          return (
+            <Card key={batch.day} className="border-0 shadow-sm overflow-hidden">
+              {/* Batch header colapsable */}
+              <button
+                type="button"
+                className="w-full flex items-center gap-2 px-5 py-3 bg-gray-50 border-b hover:bg-gray-100 transition-colors"
+                onClick={() => toggleBatch(batch.day)}
+                aria-expanded={isLoteOpen}
+              >
+                {isLoteOpen
+                  ? <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                  : <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                }
+                <span className="font-semibold text-gray-800">{batch.label}</span>
+                <span className="text-xs text-gray-400">·</span>
+                <span className="text-xs text-gray-400">{formatDate(batch.day)}</span>
+                <span className="ml-auto text-xs text-gray-400">{batch.totalItems} asignación(es)</span>
+              </button>
 
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Producto</TableHead>
-                  <TableHead className="text-right">Asignado</TableHead>
-                  <TableHead className="text-right">Vendido</TableHead>
-                  <TableHead className="text-right">Merma</TableHead>
-                  <TableHead className="text-right">Restante</TableHead>
-                  <TableHead className="text-right">Deuda</TableHead>
-                  <TableHead className="text-right">Pagado</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(() => {
-                  const withBatch = buildVisualBatches(
-                    group.items.map((a: any) => ({ ...a, createdAt: a.startDate }))
-                  )
-                  return withBatch.map((a: any) => (
-                  <TableRow key={a.id}>
-                    <TableCell>
-                      <div>
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <p className="font-medium text-sm">{a.product.name}</p>
-                          <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded font-mono">{a.label}</span>
-                        </div>
-                        <CompanyBadge companyName={a.product.company.name} colorKey={a.product.company.id} />
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {formatUnitsToBoxes(a.quantityAssigned, a.product.unitPerBox)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm text-green-700 font-medium">
-                      {a.totalSold ?? 0}u
-                    </TableCell>
-                    <TableCell className="text-right text-sm text-red-600">
-                      {a.totalMerma ?? 0}u
-                    </TableCell>
-                    <TableCell className="text-right text-sm font-semibold text-blue-700">
-                      {a.remaining ?? a.quantityAssigned}u
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {formatCurrency(a.totalDue ?? 0)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm text-gray-500">
-                      {formatCurrency(a.totalPaid ?? 0)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex gap-1 justify-end">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-gray-400 hover:text-[#1e3a5f]"
-                          title="Ver historial"
-                          onClick={() => setHistorialAssignment(a)}
+              {isLoteOpen && (
+                <div className="divide-y divide-gray-100">
+                  {batch.workers.map((group: any) => {
+                    const workerKey = `${batch.day}-${group.worker.id}`
+                    const isWorkerOpen = expandedWorkers.has(workerKey)
+                    return (
+                      <div key={workerKey}>
+                        {/* Worker header colapsable */}
+                        <button
+                          type="button"
+                          className="w-full flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors"
+                          onClick={() => toggleWorker(workerKey)}
+                          aria-expanded={isWorkerOpen}
                         >
-                          <History className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-red-400 hover:text-red-600"
-                          title="Cerrar asignación"
-                          onClick={() => setClosingAssignment(a)}
-                        >
-                          <XCircle className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                  ))
-                })()}
-              </TableBody>
-            </Table>
+                          {isWorkerOpen
+                            ? <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                            : <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                          }
+                          <div className="w-7 h-7 rounded-full bg-[#1e3a5f]/10 flex items-center justify-center flex-shrink-0">
+                            <User className="h-3.5 w-3.5 text-[#1e3a5f]" />
+                          </div>
+                          <span className="font-semibold text-gray-900">{group.worker.name}</span>
+                          <span className="text-xs text-gray-400">{group.items.length} producto(s)</span>
+                          {(() => {
+                            const audit = getWorkerAuditBadge(group.items)
+                            if (audit === "AUDITED") return (
+                              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Auditado</span>
+                            )
+                            if (audit === "IN_REVIEW") return (
+                              <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium">En revisión</span>
+                            )
+                            return (
+                              <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Pendiente</span>
+                            )
+                          })()}
+                          <div className="ml-auto text-right">
+                            <p className={`text-sm font-bold ${group.pendingDebt > 0 ? "text-orange-600" : "text-green-600"}`}>
+                              {formatCurrency(group.pendingDebt)}
+                            </p>
+                          </div>
+                        </button>
 
-            {/* Footer totales del trabajador */}
-            <div className="px-5 py-3 border-t bg-gray-50/50 flex justify-end gap-6 text-sm">
-              <span className="text-gray-500">
-                Total cobrado: <strong>{formatCurrency(group.totalDue)}</strong>
-              </span>
-              <span className="text-gray-500">
-                Total pagado: <strong>{formatCurrency(group.totalPaid)}</strong>
-              </span>
-              <span className={group.pendingDebt > 0 ? "text-orange-600 font-semibold" : "text-green-600 font-semibold"}>
-                Pendiente: {formatCurrency(group.pendingDebt)}
-              </span>
-            </div>
-          </Card>
-        ))
+                        {isWorkerOpen && (
+                          <>
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Producto</TableHead>
+                                  <TableHead className="text-right">Asignado</TableHead>
+                                  <TableHead className="text-right">Vendido</TableHead>
+                                  <TableHead className="text-right">Merma</TableHead>
+                                  <TableHead className="text-right">Restante</TableHead>
+                                  <TableHead className="text-right">Deuda</TableHead>
+                                  <TableHead className="text-right">Pagado</TableHead>
+                                  <TableHead />
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {group.items.map((a: any) => {
+                                  const isAudited = a.status === "CLOSED" && a.auditStatus === "AUDITED"
+                                  return (
+                                  <TableRow key={a.id} className={isAudited ? "opacity-60 bg-green-50/40" : ""}>
+                                    <TableCell>
+                                      <div>
+                                        <p className="font-medium text-sm">{a.product.name}</p>
+                                        <CompanyBadge companyName={a.product.company.name} colorKey={a.product.company.id} />
+                                        {isAudited && (
+                                          <span className="text-xs text-green-600 font-semibold flex items-center gap-1 mt-0.5">
+                                            <ShieldCheck className="h-3 w-3" /> Auditado
+                                          </span>
+                                        )}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="text-right text-sm">
+                                      {formatUnitsToBoxes(a.quantityAssigned, a.product.unitPerBox)}
+                                    </TableCell>
+                                    <TableCell className="text-right text-sm text-green-700 font-medium">
+                                      {a.totalSold ?? 0}u
+                                    </TableCell>
+                                    <TableCell className="text-right text-sm text-red-600">
+                                      {a.totalMerma ?? 0}u
+                                    </TableCell>
+                                    <TableCell className="text-right text-sm font-semibold text-blue-700">
+                                      {a.remaining ?? a.quantityAssigned}u
+                                    </TableCell>
+                                    <TableCell className="text-right text-sm">
+                                      {formatCurrency(a.totalDue ?? 0)}
+                                    </TableCell>
+                                    <TableCell className="text-right text-sm text-gray-500">
+                                      {formatCurrency(a.totalPaid ?? 0)}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      <div className="flex gap-1 justify-end">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7 text-gray-400 hover:text-[#1e3a5f]"
+                                          title="Ver historial"
+                                          onClick={() => setHistorialAssignment(a)}
+                                        >
+                                          <History className="h-3.5 w-3.5" />
+                                        </Button>
+                                        {!isAudited && (
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7 text-red-400 hover:text-red-600"
+                                            title="Cerrar asignación"
+                                            onClick={() => setClosingAssignment(a)}
+                                          >
+                                            <XCircle className="h-3.5 w-3.5" />
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                  )
+                                })}
+                              </TableBody>
+                            </Table>
+                            {/* Footer totales del trabajador */}
+                            <div className="px-5 py-3 border-t bg-gray-50/50 flex flex-wrap items-center justify-between gap-3 text-sm">
+                              <div className="flex flex-wrap gap-4">
+                                <span className="text-gray-500">
+                                  Cobrado: <strong>{formatCurrency(group.totalDue)}</strong>
+                                </span>
+                                <span className="text-gray-500">
+                                  Pagado: <strong>{formatCurrency(group.totalPaid)}</strong>
+                                </span>
+                                <span className={group.pendingDebt > 0 ? "text-orange-600 font-semibold" : "text-green-600 font-semibold"}>
+                                  Pendiente: {formatCurrency(group.pendingDebt)}
+                                </span>
+                              </div>
+                              {group.items.some((a: any) => a.status === "ACTIVE") && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-green-600 text-green-700 hover:bg-green-50"
+                                  onClick={() => setAuditingGroup({
+                                    workerId: group.worker.id,
+                                    workerName: group.worker.name,
+                                    batchDay: batch.day,
+                                    items: group.items.filter((a: any) => a.status === "ACTIVE"),
+                                  })}
+                                >
+                                  <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />
+                                  Auditar
+                                </Button>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </Card>
+          )
+        })
       )}
 
       {/* Sheet historial diario */}
@@ -467,6 +592,70 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Dialog auditoría */}
+      <Dialog open={!!auditingGroup} onOpenChange={(v) => { if (!v) setAuditingGroup(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Auditar trabajador</DialogTitle>
+          </DialogHeader>
+          {auditingGroup && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Cerrar todas las asignaciones activas de <strong>{auditingGroup.workerName}</strong> en este lote.
+                El stock restante se devuelve automáticamente al inventario.
+              </p>
+
+              <div className="border border-gray-100 rounded-xl overflow-hidden">
+                <div className="px-4 py-2 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  Stock a devolver
+                </div>
+                {auditingGroup.items.map((a: any) => (
+                  <div key={a.id} className="px-4 py-2.5 border-t border-gray-100 flex justify-between items-center text-sm">
+                    <div>
+                      <p className="font-medium">{a.product.name}</p>
+                      <p className="text-xs text-gray-400">{a.product.company.name}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-blue-700">+{a.remaining ?? 0}u</p>
+                      <p className="text-xs text-gray-400">de {a.quantityAssigned}u asignadas</p>
+                    </div>
+                  </div>
+                ))}
+                <div className="px-4 py-2.5 border-t bg-blue-50 flex justify-between text-sm font-semibold text-blue-800">
+                  <span>Total a devolver:</span>
+                  <span>+{auditingGroup.items.reduce((s: number, a: any) => s + (a.remaining ?? 0), 0)}u</span>
+                </div>
+              </div>
+
+              {auditingGroup.items.some((a: any) => (a.pendingDebt ?? 0) > 0) && (
+                <div className="flex items-start gap-2 bg-orange-50 border border-orange-100 rounded-xl p-3 text-sm">
+                  <AlertTriangle className="h-4 w-4 text-orange-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-orange-700">
+                    Hay saldo pendiente. La asignación se cierra pero la deuda permanece registrada.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-2 justify-end pt-1">
+                <Button variant="outline" onClick={() => setAuditingGroup(null)}>
+                  Cancelar
+                </Button>
+                <Button
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  disabled={auditMutation.isPending}
+                  onClick={() => auditMutation.mutate({
+                    workerId: auditingGroup.workerId,
+                    batchDay: auditingGroup.batchDay,
+                  })}
+                >
+                  {auditMutation.isPending ? "Auditando..." : "Confirmar auditoría"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog confirmar cierre */}
       <Dialog open={!!closingAssignment} onOpenChange={(v) => { if (!v) setClosingAssignment(null) }}>

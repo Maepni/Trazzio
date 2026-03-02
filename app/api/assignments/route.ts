@@ -20,7 +20,7 @@ export async function GET() {
   const workerId = session.user.workerId
 
   const where = isAdmin
-    ? { status: "ACTIVE" as const }
+    ? { OR: [{ status: "ACTIVE" as const }, { status: "CLOSED" as const, auditStatus: "AUDITED" as const }] }
     : { status: "ACTIVE" as const, workerId: workerId ?? "" }
 
   const assignments = await prisma.assignment.findMany({

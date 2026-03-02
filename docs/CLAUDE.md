@@ -36,7 +36,7 @@ app/
 │   ├── stock           → Recepción de mercadería + historial + inventario
 │   ├── workers         → CRUD trabajadores + credenciales + gestión de pagos
 │   ├── assignments     → Asignaciones activas (multi-producto, agrupadas por trabajador)
-│   └── settlements     → Rendiciones: cards agrupadas por trabajador/día
+│   └── settlements     → Rendiciones: historial (un card por trabajador, Sheet con detalles)
 ├── (worker)/
 │   ├── home            → Asignaciones del día + balance pendiente (SSR)
 │   └── settle          → Rendición paso a paso con BoxUnitStepper
@@ -46,8 +46,9 @@ app/
     ├── products/[id]       GET, POST, PUT, DELETE
     ├── workers/[id]        GET, POST, PUT, DELETE
     ├── stock               GET, POST
-    ├── assignments/        GET (activas), POST
-    ├── assignments/[id]    DELETE (cierra asignación, restaura remaining al stock)
+    ├── assignments/        GET (admin: ACTIVE+CLOSED+AUDITED; worker: solo ACTIVE), POST
+    ├── assignments/audit   POST { workerId, batchDay } → cierra ACTIVE del trabajador en ese día, devuelve remaining al stock, marca AUDITED
+    ├── assignments/[id]    DELETE (cierra asignación individual, restaura remaining al stock)
     ├── daily-sales/        GET (?assignmentId=xxx), POST (batch)
     ├── settlements/        GET (historial CLOSED)
     └── payments/           GET (balance trabajador), POST (registrar pago)
@@ -61,18 +62,22 @@ app/
 User           id, username, password, role(ADMIN|WORKER)
 Worker         id, name, phone, commission(Decimal), commissionType(PERCENTAGE|FIXED), userId
 Company        id, name
-Product        id, name, companyId, costPrice(Decimal), salePrice(Decimal),
+Product        id, name, code?, aliases[], companyId, costPrice(Decimal), salePrice(Decimal),
                unitPerBox, lowStockAlert, stock,
                productType(ProductType)             ← ESTANDAR|LECHE|ARROZ
+Batch          id, code(UNIQUE), status(BatchStatus), openedAt, closedAt?,
+               notes?                               ← lote persistido de mercadería/asignaciones
 Assignment     id, workerId, productId, startDate, quantityAssigned,
-               status(ACTIVE|CLOSED)               ← sin Settlement ni MermaItem
+               status(ACTIVE|CLOSED), auditStatus(AuditStatus), batchId?
 DailySale      id, assignmentId, date, quantitySold, quantityMerma,
                amountPaid(Decimal), notes           ← registro diario del trabajador
-StockEntry     id, productId, quantity, boxes, entryDate, notes
+StockEntry     id, productId, quantity, boxes, entryDate, notes, batchId?
 WorkerPayment  id, workerId, amount(Decimal), paidAt(DateTime), notes
 
 enum ProductType    { ESTANDAR | LECHE | ARROZ }   ← controla labels (Cajas/Bolsas/Costales)
 enum AssignmentStatus { ACTIVE | CLOSED }
+enum BatchStatus    { OPEN | CLOSED }
+enum AuditStatus    { PENDING | IN_REVIEW | AUDITED }
 ```
 
 **Regla central:**
@@ -100,7 +105,7 @@ NEXTAUTH_URL="http://localhost:3000"
 ```bash
 cd /home/mapins/Escritorio/trazzio
 npm run dev                             # servidor de desarrollo
-npm test                               # vitest (6 archivos, 14 tests)
+npm test                               # vitest
 npm run lint                           # ESLint
 npm run build                          # build de producción
 npx prisma db push && npm run db:seed  # reset + recrear tablas + seed
@@ -119,27 +124,32 @@ Seed crea: `admin / admin123` (ADMIN) y `trabajador / worker123` (WORKER)
 ### Stock (Recepción de Mercadería)
 - **Flujo:** Seleccionar empresa → aparecen todos sus productos → ingresar **Cajas + Unidades** por separado (aditivo: total = cajas × unitPerBox + unidades)
 - Submit crea una `StockEntry` por producto con qty > 0 (múltiples POST en serie)
+- **Búsqueda de inventario:** Input simple (no combobox) que filtra en tiempo real por nombre de producto O nombre de empresa. Botón X para limpiar. Cada empresa tiene **borde izquierdo coloreado** único (via `getCompanyBorderClass` de `lib/company-colors.ts`)
 
 ### Asignaciones
 - **Flujo:** Seleccionar trabajador → seleccionar empresa → aparecen todos sus productos con stock > 0 → ingresar Cajas + Unidades por producto
 - Solo productos con qty > 0 se incluyen en el POST
-- La tabla muestra asignaciones activas (`status=ACTIVE`) agrupadas por trabajador con badge `Lote #N` por `startDate`
-- Admin puede cerrar una asignación (DELETE) → restaura el `remaining` al stock
+- La tabla muestra asignaciones en **acordeón doble: Lote (por fecha de startDate) > Trabajador**. Estado: `expandedBatches`/`expandedWorkers` (Set vacío = todos colapsados). El GET devuelve ACTIVE **y** CLOSED+AUDITED para el admin.
+- Filas AUDITED aparecen con fondo verde suave, opacidad reducida y badge "✓ Auditado"; sin botón de cierre.
+- **Badge de auditoría** en header del trabajador: "Auditado" (verde, solo si TODOS sus items están CLOSED+AUDITED), "En revisión" (amarillo), "Pendiente" (gris).
+- **Botón "Auditar"** en footer del trabajador expandido (solo si tiene asignaciones ACTIVE): llama a `POST /api/assignments/audit` → cierra todas sus ACTIVE en ese lote, devuelve `remaining` al stock, marca `auditStatus=AUDITED`. Las filas permanecen visibles como auditadas.
+- Admin puede cerrar una asignación individualmente (DELETE) → restaura el `remaining` al stock y la elimina del registro.
 - Historial diario por asignación: Sheet con tabla de `DailySale` registros
 
 ### Rendición del Trabajador (`settle-form.tsx`)
 - **Estado local** (no RHF): `useState<ItemState[]>` por producto
+- **Filtro de lote activo:** `getActiveBatch(assignments)` (helper interno) filtra las asignaciones al `startDate` más reciente. Si no hay `startDate`, muestra todas.
 - El worker ingresa por producto: `quantitySold` (BoxUnitStepper), `quantityMerma` (Stepper simple), `amountPaid` (input decimal)
+- **Restante en tiempo real:** se muestra como `Restante: {remaining - quantitySold - quantityMerma}u` en la card de cada producto
 - Solo items con algún movimiento (vendido > 0, merma > 0 o pago > 0) se incluyen en el POST
 - Submit: `POST /api/daily-sales` con array de items → crea un `DailySale` por item
-- CTA final: **"Finalizar registro del día"**
-- Paso 2 muestra resumen por producto con `CompanyBadge`
+- CTA: **"Finalizar registro del día"** (paso 1 → confirmación; paso 2 → mismo label, `disabled` durante envío para evitar doble submit)
+- **Error inline visible:** estado `formError` + `<div role="alert">` en DOM cuando validación falla (sin movimiento o vendido+merma > remaining). Complementa el toast y es testeable con `screen.getByRole("alert")`.
 
 ### Rendiciones Admin (`settlements-client.tsx`)
-- Muestra asignaciones `CLOSED` (historial)
-- Cards agrupadas: **un card por trabajador/día** (agrupa todos sus productos)
-- Al hacer clic: Sheet con tabla de todos los productos (vendido, a cobrar, pagó, diferencia)
-- Ajuste inline por producto individual dentro del Sheet (ícono lápiz por fila)
+- Muestra asignaciones `CLOSED` (historial) agrupadas por trabajador
+- **Un card por trabajador**: muestra total vendido y deuda pendiente; trabajadores con deuda aparecen primero
+- Al hacer clic: Sheet con resumen global (cobrado/pagado/pendiente) y lista de todas sus asignaciones cerradas, cada una con su producto, empresa, totales y tabla de registros diarios (`DailySale`)
 
 ### Pagos a Trabajadores
 - **Admin → Workers:** cada card de trabajador muestra balance pendiente (naranja) y botón `$`
@@ -153,9 +163,10 @@ Seed crea: `admin / admin123` (ADMIN) y `trabajador / worker123` (WORKER)
 
 ### Componentes Compartidos (`components/shared/`)
 - **`CompanyBadge`**: badge accesible con `aria-label`, prefix "EMP" y color hash deterministico (`lib/company-colors.ts`)
-- **`ProductSearchCombobox`**: input con filtrado en tiempo real por nombre y empresa; navegación teclado (↑↓ Enter Esc)
-- **`BatchGroupCard`**: card con header `Lote #N · fecha · N productos` para agrupar ingresos/asignaciones
+- **`ProductSearchCombobox`**: input con `role="combobox"` + `aria-haspopup` + `aria-expanded`; filtrado por nombre, empresa, `code` y `aliases`; navegación teclado (↑↓ Enter Esc); guardia `typeof item?.scrollIntoView === "function"` para compatibilidad con jsdom
+- **`BatchGroupCard`**: card **colapsable** (`defaultOpen=true` por defecto) con header `<button>` y `aria-expanded`; prop `extra` para contenido adicional en header
 - `buildVisualBatches<T>(items)` en `lib/batch-grouping.ts` — ordena por `createdAt` desc y etiqueta secuencialmente
+- `getBatchProgress(assignments)` en `lib/batch-grouping.ts` → `{ currentBatchClosed, nextBatchEnabled }` — prioriza `batchId`/`batch.status` cuando está disponible; fallback por `startDate` para datos legacy
 
 ---
 
@@ -221,10 +232,10 @@ resolver: zodResolver(schema) as Resolver<FormData>  // o "as any"
 | `app/api/payments/route.ts` | GET (balance por trabajador/todos) + POST (registrar pago) |
 | `app/api/daily-sales/route.ts` | GET (?assignmentId) + POST batch (array de DailySale) |
 | `components/shared/company-badge.tsx` | Badge accesible de empresa con color hash |
-| `components/shared/product-search-combobox.tsx` | Buscador con filtro por nombre/empresa + teclado |
-| `components/shared/batch-group-card.tsx` | Card con header de lote numerado |
-| `lib/company-colors.ts` | Hash deterministico de color por empresa |
-| `lib/batch-grouping.ts` | `buildVisualBatches<T>()` — ordena por fecha y etiqueta Lote #N |
+| `components/shared/product-search-combobox.tsx` | Buscador con filtro por nombre/empresa + teclado + `role="combobox"` |
+| `components/shared/batch-group-card.tsx` | Card colapsable con header botón y `aria-expanded` |
+| `lib/company-colors.ts` | `getCompanyColorClass()` (badge bg/text) + `getCompanyBorderClass()` (border-l coloreado) — hash deterministico |
+| `lib/batch-grouping.ts` | `buildVisualBatches<T>()` + `getBatchProgress()` — lotes visuales y estado de cierre |
 | `lib/product-types.ts` | `getProductLabels(productType)` → labels de contenedor/unidad |
 | `vitest.config.ts` | Config de Vitest (jsdom + globals + alias @/) |
 | `tests/` | Tests unitarios de componentes, lib y API schemas |
@@ -257,9 +268,17 @@ resolver: zodResolver(schema) as Resolver<FormData>  // o "as any"
 
 11. **Viewport móvil:** El layout worker usa `style={{ minHeight: "100dvh" }}` (dynamic viewport height) en lugar de `min-h-screen` para cubrir el área completa incluyendo cuando la barra del browser se oculta.
 
-12. **Vitest globals en TS:** `tsconfig.json` debe tener `"types": ["vitest/globals"]` para que `test`/`expect` sean reconocidos sin imports explícitos en los tests.
+12. **Vitest globals en TS:** `tsconfig.json` debe tener `"types": ["vitest/globals", "node"]`. El array `"types"` explícito excluye los tipos de Node por defecto; sin `"node"` el seed falla con `Cannot find name 'process'`.
 
 13. **Caché stale de `.next/types`:** Tras borrar una ruta (ej: `/reports`), el directorio `.next/types/app/(admin)/reports/` queda y genera errores TS. Solución: `rm -rf .next` y volver a compilar.
+
+14. **`scrollIntoView` en jsdom:** No existe en el entorno de test de Vitest. En componentes con scroll programático usar guardia: `if (typeof item?.scrollIntoView === "function") item.scrollIntoView(...)`. Sin esto los tests con `userEvent.keyboard("{ArrowDown}")` lanzan `TypeError`.
+
+15. **Acordeones con sets "expandidos":** `AssignmentsClient` usa `expandedBatches: Set<string>` y `expandedWorkers: Set<string>` (set vacío = todos colapsados). La lógica es `isOpen = expandedSet.has(key)`. No confundir con el patrón inverso (`collapsedSet`).
+
+16. **Tailwind classes en `lib/`:** Las clases dinámicas retornadas desde funciones en `lib/` (ej: `getCompanyBorderClass`) NO se incluyen en el CSS bundle si `lib/` no está en `tailwind.config.ts` content. Solución ya aplicada: `"./lib/**/*.{js,ts}"` está en el array `content` del config.
+
+17. **Worker bottom nav vs botones fijos:** `WorkerBottomNav` usa `fixed bottom-0 z-50` (~64px de alto). Cualquier botón CTA fijo en páginas worker debe usar `fixed bottom-16` (no `bottom-0`) o quedará tapado por la barra de navegación. Ejemplo: el botón "Finalizar registro del día" en `settle-form.tsx`.
 
 ---
 

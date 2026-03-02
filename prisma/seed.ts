@@ -126,6 +126,14 @@ async function main() {
   })
   console.log("✅ Trabajador demo:", workerUser.username, "/ worker123")
 
+  // Batch demo (lote activo)
+  await prisma.batch.upsert({
+    where: { id: "batch-demo-1" },
+    update: {},
+    create: { id: "batch-demo-1", code: "LOTE-0001", status: "OPEN" },
+  })
+  console.log("✅ Batch demo: LOTE-0001 (OPEN)")
+
   console.log("\n🎉 Seed completado!")
   console.log("   Admin:      admin      / admin123")
   console.log("   Trabajador: trabajador / worker123")
