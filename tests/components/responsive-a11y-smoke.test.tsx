@@ -107,6 +107,8 @@ test("AssignmentsClient: botón de lote tiene aria-expanded", () => {
       initialWorkers={mockWorkers}
       initialProducts={mockProducts}
       initialAssignments={mockAssignments}
+      activeBatch={{ id: "b1", code: "LOTE-0001", status: "OPEN", number: 1 }}
+      totalBatches={1}
     />
   )
   const loteBtn = screen.getByRole("button", { name: /Lote #1/i })

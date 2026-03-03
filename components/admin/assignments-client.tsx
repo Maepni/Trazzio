@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
@@ -15,8 +16,12 @@ import { formatCurrency, formatUnitsToBoxes, formatDate, formatDateTime } from "
 import { getProductLabels } from "@/lib/product-types"
 import { CompanyBadge } from "@/components/shared/company-badge"
 
-export function AssignmentsClient({ initialWorkers, initialProducts, initialAssignments }: {
-  initialWorkers: any[]; initialProducts: any[]; initialAssignments: any[]
+export function AssignmentsClient({ initialWorkers, initialProducts, initialAssignments, activeBatch, totalBatches }: {
+  initialWorkers: any[]
+  initialProducts: any[]
+  initialAssignments: any[]
+  activeBatch: any | null
+  totalBatches: number
 }) {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
@@ -36,7 +41,7 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
 
   // Auditoría
   const [auditingGroup, setAuditingGroup] = useState<{
-    workerId: string; workerName: string; batchDay: string; items: any[]
+    workerId: string; workerName: string; batchDay: string; batchId: string | null; items: any[]
   } | null>(null)
 
   const toggleBatch = (day: string) => setExpandedBatches(prev => {
@@ -65,6 +70,28 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
     queryFn: async () => { const r = await fetch("/api/assignments"); return r.json() },
     initialData: initialAssignments,
     refetchInterval: 30000,
+  })
+
+  const { data: batchData } = useQuery({
+    queryKey: ["active-batch"],
+    queryFn: async () => { const r = await fetch("/api/batch"); return r.json() },
+    initialData: { activeBatch, totalBatches, canOpenNew: !activeBatch },
+  })
+  const currentBatch = batchData?.activeBatch ?? activeBatch
+  const currentTotalBatches = batchData?.totalBatches ?? totalBatches
+
+  const openBatchMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/batch", { method: "POST" })
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Error") }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["active-batch"] })
+      queryClient.invalidateQueries({ queryKey: ["assignments-active"] })
+      toast.success("Nuevo lote abierto")
+    },
+    onError: (e: any) => toast.error(e.message),
   })
 
   // Historial diario de una asignación
@@ -116,11 +143,17 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
   })
 
   const auditMutation = useMutation({
-    mutationFn: async (data: { workerId: string; batchDay: string }) => {
+    mutationFn: async (data: { workerId: string; batchDay: string; batchId?: string | null }) => {
+      const payload: any = { workerId: data.workerId }
+      if (data.batchId) {
+        payload.batchId = data.batchId
+      } else {
+        payload.batchDay = data.batchDay
+      }
       const res = await fetch("/api/assignments/audit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Error") }
       return res.json()
@@ -128,6 +161,7 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["assignments-active"] })
       queryClient.invalidateQueries({ queryKey: ["products-available"] })
+      queryClient.invalidateQueries({ queryKey: ["active-batch"] })
       toast.success(`Auditoría completada. Stock devuelto: +${data.totalRestored}u`)
       setAuditingGroup(null)
     },
@@ -172,18 +206,40 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
     return "PENDING"
   }
 
-  // Agrupar por lote (fecha de startDate) y luego por trabajador
-  const batchMap: Record<string, any[]> = {}
+  // Extraer número de lote del código (ej: "LOTE-0002" → 2)
+  const extractBatchNumber = (code: string) => parseInt(code.replace(/\D/g, ''), 10)
+
+  // Agrupar por batchId (si existe) o por fecha de startDate (fallback legacy)
+  const batchGroupMap: Record<string, {
+    batchId: string | null; batchCode: string | null; batchNumber: number | null; day: string; items: any[]
+  }> = {}
   assignments.forEach((a: any) => {
+    const key = a.batchId ?? a.startDate.toString().slice(0, 10)
     const day = a.startDate.toString().slice(0, 10)
-    if (!batchMap[day]) batchMap[day] = []
-    batchMap[day].push(a)
+    if (!batchGroupMap[key]) {
+      batchGroupMap[key] = {
+        batchId: a.batchId ?? null,
+        batchCode: a.batch?.code ?? null,
+        batchNumber: a.batch?.code ? extractBatchNumber(a.batch.code) : null,
+        day,
+        items: [],
+      }
+    }
+    batchGroupMap[key].items.push(a)
   })
-  const batchDays = Object.keys(batchMap).sort((a, b) => b.localeCompare(a))
-  const batches = batchDays.map((day, index) => {
-    const items = batchMap[day]
+
+  // Ordenar: batches con batchId primero (por número desc), luego legacy por fecha desc
+  const sortedBatchGroups = Object.values(batchGroupMap).sort((a, b) => {
+    if (a.batchId && b.batchId) return (b.batchNumber ?? 0) - (a.batchNumber ?? 0)
+    if (a.batchId) return -1
+    if (b.batchId) return 1
+    return b.day.localeCompare(a.day)
+  })
+
+  const batches = sortedBatchGroups.map((group, index) => {
+    const label = group.batchNumber ? `Lote #${group.batchNumber}` : `Lote #${index + 1}`
     const workerMap: Record<string, { worker: any; items: any[]; totalDue: number; totalPaid: number; pendingDebt: number }> = {}
-    items.forEach((a: any) => {
+    group.items.forEach((a: any) => {
       if (!workerMap[a.workerId]) {
         workerMap[a.workerId] = { worker: a.worker, items: [], totalDue: 0, totalPaid: 0, pendingDebt: 0 }
       }
@@ -192,7 +248,14 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
       workerMap[a.workerId].totalPaid += a.totalPaid ?? 0
       workerMap[a.workerId].pendingDebt += a.pendingDebt ?? 0
     })
-    return { day, label: `Lote #${index + 1}`, totalItems: items.length, workers: Object.values(workerMap) }
+    return {
+      key: group.batchId ?? group.day,
+      day: group.day,
+      batchId: group.batchId,
+      label,
+      totalItems: group.items.length,
+      workers: Object.values(workerMap),
+    }
   })
 
   return (
@@ -200,11 +263,15 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#1e3a5f]">Asignaciones Activas</h1>
-          <p className="text-gray-500 text-sm">{assignments.length} asignación(es) activa(s)</p>
+          <p className="text-gray-500 text-sm">{assignments.length} asignación(es)</p>
         </div>
         <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm() }}>
           <DialogTrigger asChild>
-            <Button className="bg-[#1e3a5f] hover:bg-[#2d5a9e]">
+            <Button
+              className="bg-[#1e3a5f] hover:bg-[#2d5a9e]"
+              disabled={!currentBatch}
+              title={!currentBatch ? "Abre un nuevo lote antes de crear asignaciones" : undefined}
+            >
               <Plus className="h-4 w-4 mr-2" /> Nueva Asignación
             </Button>
           </DialogTrigger>
@@ -319,6 +386,32 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
         </Dialog>
       </div>
 
+      {/* Banner lote activo */}
+      <Card className={`border-0 shadow-sm ${currentBatch ? 'border-l-4 border-l-blue-400 bg-blue-50' : 'border-l-4 border-l-amber-400 bg-amber-50'}`}>
+        <CardContent className="p-4 flex items-center justify-between gap-3">
+          {currentBatch ? (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="font-medium text-blue-800">Lote activo:</span>
+              <Badge className="bg-blue-600 hover:bg-blue-600">Lote #{currentBatch.number}</Badge>
+              <Badge variant="outline" className="text-green-700 border-green-300">Abierto</Badge>
+              <span className="text-blue-600 text-xs">{currentBatch.code}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <span className="text-amber-700 text-sm font-medium">No hay lote activo. Abre un nuevo lote para crear asignaciones.</span>
+              <Button
+                size="sm"
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+                disabled={openBatchMutation.isPending}
+                onClick={() => openBatchMutation.mutate()}
+              >
+                {openBatchMutation.isPending ? "Abriendo..." : `Abrir Lote #${currentTotalBatches + 1}`}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Lista de asignaciones: acordeón Lote > Trabajador */}
       {batches.length === 0 ? (
         <Card className="border-0 shadow-sm">
@@ -329,14 +422,14 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
         </Card>
       ) : (
         batches.map((batch) => {
-          const isLoteOpen = expandedBatches.has(batch.day)
+          const isLoteOpen = expandedBatches.has(batch.key)
           return (
-            <Card key={batch.day} className="border-0 shadow-sm overflow-hidden">
+            <Card key={batch.key} className="border-0 shadow-sm overflow-hidden">
               {/* Batch header colapsable */}
               <button
                 type="button"
                 className="w-full flex items-center gap-2 px-5 py-3 bg-gray-50 border-b hover:bg-gray-100 transition-colors"
-                onClick={() => toggleBatch(batch.day)}
+                onClick={() => toggleBatch(batch.key)}
                 aria-expanded={isLoteOpen}
               >
                 {isLoteOpen
@@ -352,7 +445,7 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
               {isLoteOpen && (
                 <div className="divide-y divide-gray-100">
                   {batch.workers.map((group: any) => {
-                    const workerKey = `${batch.day}-${group.worker.id}`
+                    const workerKey = `${batch.key}-${group.worker.id}`
                     const isWorkerOpen = expandedWorkers.has(workerKey)
                     return (
                       <div key={workerKey}>
@@ -491,6 +584,7 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
                                     workerId: group.worker.id,
                                     workerName: group.worker.name,
                                     batchDay: batch.day,
+                                    batchId: batch.batchId,
                                     items: group.items.filter((a: any) => a.status === "ACTIVE"),
                                   })}
                                 >
@@ -647,6 +741,7 @@ export function AssignmentsClient({ initialWorkers, initialProducts, initialAssi
                   onClick={() => auditMutation.mutate({
                     workerId: auditingGroup.workerId,
                     batchDay: auditingGroup.batchDay,
+                    batchId: auditingGroup.batchId,
                   })}
                 >
                   {auditMutation.isPending ? "Auditando..." : "Confirmar auditoría"}

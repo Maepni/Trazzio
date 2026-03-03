@@ -16,7 +16,10 @@ export async function GET() {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 })
   }
   const entries = await prisma.stockEntry.findMany({
-    include: { product: { include: { company: true } } },
+    include: {
+      product: { include: { company: true } },
+      batch: { select: { id: true, code: true } },
+    },
     orderBy: { entryDate: "desc" },
     take: 50,
   })
@@ -41,7 +44,11 @@ export async function POST(req: Request) {
         throw new Error(`Stock insuficiente. Stock actual: ${product.stock}`)
       }
     }
-    const created = await tx.stockEntry.create({ data: parsed.data })
+    // Vincular al batch OPEN si existe (no es obligatorio)
+    const activeBatch = await tx.batch.findFirst({ where: { status: 'OPEN' } })
+    const created = await tx.stockEntry.create({
+      data: { ...parsed.data, batchId: activeBatch?.id ?? null },
+    })
     await tx.product.update({
       where: { id: parsed.data.productId },
       data: { stock: { increment: parsed.data.quantity } },

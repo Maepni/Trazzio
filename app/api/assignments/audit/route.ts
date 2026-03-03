@@ -8,26 +8,33 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 })
   }
 
-  const { workerId, batchDay } = await req.json()
-  if (!workerId || !batchDay) {
-    return NextResponse.json({ error: "workerId y batchDay son requeridos" }, { status: 400 })
+  const body = await req.json()
+  const { workerId, batchId, batchDay } = body
+
+  if (!workerId || (!batchId && !batchDay)) {
+    return NextResponse.json({ error: "workerId y (batchId o batchDay) son requeridos" }, { status: 400 })
   }
 
-  // batchDay es "YYYY-MM-DD" en UTC (igual que cómo el cliente hace .slice(0,10))
-  const dayStart = new Date(batchDay + "T00:00:00.000Z")
-  const dayEnd = new Date(batchDay + "T23:59:59.999Z")
-
-  const assignments = await prisma.assignment.findMany({
-    where: {
-      workerId,
-      status: "ACTIVE",
-      startDate: { gte: dayStart, lte: dayEnd },
-    },
-    include: {
-      dailySales: true,
-      product: true,
-    },
-  })
+  let assignments
+  if (batchId) {
+    // Buscar por workerId + batchId
+    assignments = await prisma.assignment.findMany({
+      where: { workerId, batchId, status: "ACTIVE" },
+      include: { dailySales: true, product: true },
+    })
+  } else {
+    // Fallback legacy: batchDay es "YYYY-MM-DD" en UTC
+    const dayStart = new Date(batchDay + "T00:00:00.000Z")
+    const dayEnd = new Date(batchDay + "T23:59:59.999Z")
+    assignments = await prisma.assignment.findMany({
+      where: {
+        workerId,
+        status: "ACTIVE",
+        startDate: { gte: dayStart, lte: dayEnd },
+      },
+      include: { dailySales: true, product: true },
+    })
+  }
 
   if (assignments.length === 0) {
     return NextResponse.json({ error: "Sin asignaciones activas para auditar en este lote" }, { status: 404 })
@@ -62,6 +69,19 @@ export async function POST(req: Request) {
     }
     return summaries
   })
+
+  // Si se usó batchId, verificar si quedan asignaciones ACTIVE en el lote → cerrar batch
+  if (batchId) {
+    const remaining = await prisma.assignment.findFirst({
+      where: { batchId, status: 'ACTIVE' },
+    })
+    if (!remaining) {
+      await prisma.batch.update({
+        where: { id: batchId },
+        data: { status: 'CLOSED', closedAt: new Date() },
+      })
+    }
+  }
 
   const totalRestored = results.reduce((sum, r) => sum + r.remaining, 0)
   return NextResponse.json({ ok: true, results, totalRestored })

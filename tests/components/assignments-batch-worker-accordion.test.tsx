@@ -61,14 +61,16 @@ const mockAssignments = [
   },
 ]
 
+const defaultProps = {
+  initialWorkers: mockWorkers,
+  initialProducts: mockProducts,
+  initialAssignments: mockAssignments,
+  activeBatch: { id: "b1", code: "LOTE-0001", status: "OPEN", number: 1 },
+  totalBatches: 1,
+}
+
 test("renderiza acordeón por lote con botón colapsable", async () => {
-  render(
-    <AssignmentsClient
-      initialWorkers={mockWorkers}
-      initialProducts={mockProducts}
-      initialAssignments={mockAssignments}
-    />
-  )
+  render(<AssignmentsClient {...defaultProps} />)
 
   // Debe haber un botón con el label del lote (Lote #1)
   expect(screen.getByRole("button", { name: /Lote #1/i })).toBeInTheDocument()
@@ -76,13 +78,7 @@ test("renderiza acordeón por lote con botón colapsable", async () => {
 
 test("al expandir lote aparece el trabajador", async () => {
   const user = userEvent.setup()
-  render(
-    <AssignmentsClient
-      initialWorkers={mockWorkers}
-      initialProducts={mockProducts}
-      initialAssignments={mockAssignments}
-    />
-  )
+  render(<AssignmentsClient {...defaultProps} />)
 
   // Por defecto el lote está colapsado → al click aparece el trabajador
   const loteBtn = screen.getByRole("button", { name: /Lote #1/i })
@@ -93,13 +89,13 @@ test("al expandir lote aparece el trabajador", async () => {
 
 test("muestra badge auditStatus AUDITED en la fila del trabajador tras expandir lote", async () => {
   const user = userEvent.setup()
+  // AUDITED requiere status=CLOSED + auditStatus=AUDITED
   const assignmentsWithAudit = [
-    { ...mockAssignments[0], auditStatus: "AUDITED" },
+    { ...mockAssignments[0], status: "CLOSED", auditStatus: "AUDITED" },
   ]
   render(
     <AssignmentsClient
-      initialWorkers={mockWorkers}
-      initialProducts={mockProducts}
+      {...defaultProps}
       initialAssignments={assignmentsWithAudit}
     />
   )
@@ -111,13 +107,7 @@ test("muestra badge auditStatus AUDITED en la fila del trabajador tras expandir 
 
 test("al expandir trabajador dentro del lote aparece el producto asignado", async () => {
   const user = userEvent.setup()
-  render(
-    <AssignmentsClient
-      initialWorkers={mockWorkers}
-      initialProducts={mockProducts}
-      initialAssignments={mockAssignments}
-    />
-  )
+  render(<AssignmentsClient {...defaultProps} />)
 
   // Expandir lote
   await user.click(screen.getByRole("button", { name: /Lote #1/i }))

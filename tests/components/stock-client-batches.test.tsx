@@ -59,25 +59,22 @@ const mockEntriesTwoBatches = [
   },
 ]
 
+const defaultStockProps = {
+  initialProducts: mockProducts,
+  initialEntries: mockEntriesTwoBatches,
+  activeBatch: { id: "b1", code: "LOTE-0001", status: "OPEN", number: 1 },
+  totalBatches: 1,
+}
+
 test("muestra lotes agrupados por fecha en Últimos Ingresos", async () => {
-  render(
-    <StockClient
-      initialProducts={mockProducts}
-      initialEntries={mockEntriesTwoBatches}
-    />
-  )
+  render(<StockClient {...defaultStockProps} />)
   // El botón del Lote #1 debe estar visible
   expect(screen.getByRole("button", { name: /Lote #1/i })).toBeInTheDocument()
 })
 
 test("colapsar lote oculta su contenido", async () => {
   const user = userEvent.setup()
-  render(
-    <StockClient
-      initialProducts={mockProducts}
-      initialEntries={mockEntriesTwoBatches}
-    />
-  )
+  render(<StockClient {...defaultStockProps} />)
 
   // Contenido visible inicialmente (batch abierto por defecto)
   // Lote #1 es el más reciente (2026-02-26)

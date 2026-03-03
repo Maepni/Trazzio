@@ -19,7 +19,12 @@ import { BatchGroupCard } from "@/components/shared/batch-group-card"
 import { getCompanyBorderClass } from "@/lib/company-colors"
 import { buildVisualBatches } from "@/lib/batch-grouping"
 
-export function StockClient({ initialProducts, initialEntries }: { initialProducts: any[]; initialEntries: any[] }) {
+export function StockClient({ initialProducts, initialEntries, activeBatch, totalBatches }: {
+  initialProducts: any[]
+  initialEntries: any[]
+  activeBatch: any | null
+  totalBatches: number
+}) {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [selectedCompanyId, setSelectedCompanyId] = useState("")
@@ -42,6 +47,29 @@ export function StockClient({ initialProducts, initialEntries }: { initialProduc
     queryKey: ["stock-entries"],
     queryFn: async () => { const r = await fetch("/api/stock"); return r.json() },
     initialData: initialEntries,
+  })
+
+  const { data: batchData } = useQuery({
+    queryKey: ["active-batch"],
+    queryFn: async () => { const r = await fetch("/api/batch"); return r.json() },
+    initialData: { activeBatch, totalBatches, canOpenNew: !activeBatch },
+  })
+  const currentBatch = batchData?.activeBatch ?? activeBatch
+  const currentTotalBatches = batchData?.totalBatches ?? totalBatches
+
+  const openBatchMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/batch", { method: "POST" })
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Error") }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["active-batch"] })
+      queryClient.invalidateQueries({ queryKey: ["stock-entries"] })
+      queryClient.invalidateQueries({ queryKey: ["products"] })
+      toast.success("Nuevo lote abierto")
+    },
+    onError: (e: any) => toast.error(e.message),
   })
 
   const deleteEntryMutation = useMutation({
@@ -321,6 +349,32 @@ export function StockClient({ initialProducts, initialEntries }: { initialProduc
         </DialogContent>
       </Dialog>
 
+      {/* Banner lote activo */}
+      <Card className={`border-0 shadow-sm ${currentBatch ? 'border-l-4 border-l-blue-400 bg-blue-50' : 'border-l-4 border-l-amber-400 bg-amber-50'}`}>
+        <CardContent className="p-4 flex items-center justify-between gap-3">
+          {currentBatch ? (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="font-medium text-blue-800">Lote activo:</span>
+              <Badge className="bg-blue-600 hover:bg-blue-600">Lote #{currentBatch.number}</Badge>
+              <Badge variant="outline" className="text-green-700 border-green-300">Abierto</Badge>
+              <span className="text-blue-600 text-xs">{currentBatch.code}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <span className="text-amber-700 text-sm font-medium">No hay lote activo. Los ingresos no quedarán vinculados a ningún lote.</span>
+              <Button
+                size="sm"
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+                disabled={openBatchMutation.isPending}
+                onClick={() => openBatchMutation.mutate()}
+              >
+                {openBatchMutation.isPending ? "Abriendo..." : `Abrir Lote #${currentTotalBatches + 1}`}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {lowStock.length > 0 && (
         <Card className="border-0 shadow-sm border-l-4 border-l-red-400 bg-red-50">
           <CardContent className="p-4">
@@ -460,28 +514,36 @@ export function StockClient({ initialProducts, initialEntries }: { initialProduc
             <CardContent className="py-8 text-center text-sm text-gray-400">Sin ingresos registrados</CardContent>
           </Card>
         ) : (() => {
-          // Normalizar entryDate → createdAt para buildVisualBatches
-          const normalized = entries.map((e: any) => ({ ...e, createdAt: e.entryDate }))
-          // Agrupar por día (YYYY-MM-DD)
-          const byDay = normalized.reduce((acc: Record<string, any[]>, e: any) => {
+          // Agrupar por batchId real (si existe) o por día como fallback legacy
+          const extractBatchNumber = (code: string) => parseInt(code.replace(/\D/g, ''), 10)
+          const groupMap: Record<string, { batchId: string | null; batchCode: string | null; day: string; items: any[] }> = {}
+          entries.forEach((e: any) => {
+            const key = e.batchId ?? e.entryDate.toString().slice(0, 10)
             const day = e.entryDate.toString().slice(0, 10)
-            if (!acc[day]) acc[day] = []
-            acc[day].push(e)
-            return acc
-          }, {})
-          // Construir representantes de cada día para labeling
-          const dayReps = Object.entries(byDay).map(([day, items]) => ({
-            createdAt: (items as any[])[0].entryDate,
-            day,
-            items: items as any[],
-          }))
-          const batches = buildVisualBatches(dayReps)
-          return batches.map((batch) => (
+            if (!groupMap[key]) {
+              groupMap[key] = { batchId: e.batchId ?? null, batchCode: e.batch?.code ?? null, day, items: [] }
+            }
+            groupMap[key].items.push(e)
+          })
+          // Ordenar: con batchId primero (por número desc), luego legacy por fecha desc
+          const sortedGroups = Object.values(groupMap).sort((a, b) => {
+            if (a.batchId && b.batchId) {
+              return extractBatchNumber(b.batchCode!) - extractBatchNumber(a.batchCode!)
+            }
+            if (a.batchId) return -1
+            if (b.batchId) return 1
+            return b.day.localeCompare(a.day)
+          })
+          return sortedGroups.map((group, index) => {
+            const label = group.batchCode
+              ? `Lote #${extractBatchNumber(group.batchCode)}`
+              : `Lote #${index + 1}`
+            return (
             <BatchGroupCard
-              key={batch.day}
-              label={batch.label}
-              date={formatDate(batch.items[0].entryDate)}
-              count={batch.items.length}
+              key={group.batchId ?? group.day}
+              label={label}
+              date={formatDate(group.items[0].entryDate)}
+              count={group.items.length}
             >
               <Table>
                 <TableHeader>
@@ -494,7 +556,7 @@ export function StockClient({ initialProducts, initialEntries }: { initialProduc
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {batch.items.map((e: any) => {
+                  {group.items.map((e: any) => {
                     const l = getProductLabels(e.product.productType)
                     const isAdjustment = e.quantity < 0 || e.notes?.startsWith("[AJUSTE]")
                     return (
@@ -542,7 +604,8 @@ export function StockClient({ initialProducts, initialEntries }: { initialProduc
                 </TableBody>
               </Table>
             </BatchGroupCard>
-          ))
+          )
+          })
         })()}
       </div>
     </div>

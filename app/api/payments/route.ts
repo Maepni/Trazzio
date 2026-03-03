@@ -92,15 +92,26 @@ async function getWorkerBalance(workerId: string) {
 }
 
 function computeBalance(worker: any) {
-  const totalEarned = worker.assignments.reduce((acc: number, a: any) => {
-    const totalSold = a.dailySales.reduce((s: number, d: any) => s + d.quantitySold, 0)
-    const amountDue = totalSold * Number(a.product.salePrice)
-    if (worker.commissionType === "PERCENTAGE") {
+  let totalEarned = 0
+  let daysWithReport = 0
+
+  if (worker.commissionType === "FIXED") {
+    const allDailySales = worker.assignments.flatMap((a: any) => a.dailySales)
+    const datesSet = new Set(
+      allDailySales
+        .filter((d: any) => d.quantitySold > 0 || d.quantityMerma > 0 || Number(d.amountPaid) > 0)
+        .map((d: any) => new Date(d.date).toLocaleDateString('en-CA', { timeZone: 'America/Lima' }))
+    )
+    daysWithReport = datesSet.size
+    totalEarned = daysWithReport * Number(worker.commission)
+  } else {
+    // PERCENTAGE
+    totalEarned = worker.assignments.reduce((acc: number, a: any) => {
+      const totalSold = a.dailySales.reduce((s: number, d: any) => s + d.quantitySold, 0)
+      const amountDue = totalSold * Number(a.product.salePrice)
       return acc + amountDue * (Number(worker.commission) / 100)
-    } else {
-      return acc + totalSold * Number(worker.commission)
-    }
-  }, 0)
+    }, 0)
+  }
 
   const totalPaid = worker.payments.reduce(
     (acc: number, p: any) => acc + Number(p.amount),
@@ -116,5 +127,6 @@ function computeBalance(worker: any) {
     totalPaid: Math.round(totalPaid * 100) / 100,
     pendingBalance: Math.max(0, Math.round((totalEarned - totalPaid) * 100) / 100),
     recentPayments: worker.payments.slice(0, 5),
+    daysWithReport,
   }
 }

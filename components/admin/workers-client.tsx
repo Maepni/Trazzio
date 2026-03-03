@@ -337,6 +337,15 @@ export function WorkersClient({ initialWorkers }: { initialWorkers: any[] }) {
           {payingWorker?.balance && (
             <div className="bg-orange-50 rounded-lg p-3 text-sm text-orange-800 space-y-1">
               <p>Total ganado: <strong>{formatCurrency(payingWorker.balance.totalEarned)}</strong></p>
+              {payingWorker.commissionType === "FIXED" && payingWorker.balance.daysWithReport !== undefined && (
+                <div className="text-xs text-orange-700 border-t border-orange-100 pt-1 mt-1">
+                  <span className="font-medium">{payingWorker.balance.daysWithReport} días con reporte</span>
+                  {' × '}{formatCurrency(payingWorker.commission)} = {formatCurrency(payingWorker.balance.totalEarned)}
+                  <p className="text-orange-500 mt-0.5">
+                    Se calcula una vez por día con reporte, aunque se reporten varios productos.
+                  </p>
+                </div>
+              )}
               <p>Total pagado: <strong>{formatCurrency(payingWorker.balance.totalPaid)}</strong></p>
               <p className="text-base font-bold">
                 Pendiente: {formatCurrency(payingWorker.balance.pendingBalance)}

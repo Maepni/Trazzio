@@ -11,6 +11,7 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:seed": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed.ts",
+    "db:reset": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/reset.ts",
     "db:studio": "prisma studio"
   },
   "prisma": {

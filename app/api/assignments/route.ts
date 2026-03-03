@@ -29,6 +29,7 @@ export async function GET() {
       worker: true,
       product: { include: { company: true } },
       dailySales: { orderBy: { date: "asc" } },
+      batch: { select: { id: true, code: true, status: true } },
     },
     orderBy: { startDate: "desc" },
   })
@@ -58,6 +59,11 @@ export async function POST(req: Request) {
   const { workerId, items } = parsed.data
   try {
     const assignments = await prisma.$transaction(async (tx: any) => {
+      // Verificar que hay un lote OPEN activo
+      const activeBatch = await tx.batch.findFirst({ where: { status: 'OPEN' } })
+      if (!activeBatch) {
+        throw new Error('No hay un lote activo. Abre un nuevo lote antes de crear asignaciones.')
+      }
       const created = []
       for (const item of items) {
         const product = await tx.product.findUnique({ where: { id: item.productId } })
@@ -69,8 +75,8 @@ export async function POST(req: Request) {
           data: { stock: { decrement: item.quantityAssigned } },
         })
         const assignment = await tx.assignment.create({
-          data: { workerId, productId: item.productId, quantityAssigned: item.quantityAssigned },
-          include: { worker: true, product: { include: { company: true } } },
+          data: { workerId, productId: item.productId, quantityAssigned: item.quantityAssigned, batchId: activeBatch.id },
+          include: { worker: true, product: { include: { company: true } }, batch: { select: { id: true, code: true, status: true } } },
         })
         created.push(assignment)
       }
